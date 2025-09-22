@@ -28,14 +28,14 @@ def create_celery_app() -> Celery:
     
     # Configure Celery
     celery_app.conf.update(
-        # Task routing
+        # Task routing - use default celery queue for all tasks
         task_routes={
-            'app.workers.email_worker.*': {'queue': 'email'},
-            'app.workers.media_worker.*': {'queue': 'media'},
-            'app.workers.analytics_worker.*': {'queue': 'analytics'},
-            'app.workers.ai_worker.*': {'queue': 'ai'},
-            'app.workers.notification_worker.*': {'queue': 'notifications'},
-            'app.workers.cleanup_worker.*': {'queue': 'cleanup'},
+            'app.workers.email_worker.*': {'queue': 'celery'},
+            'app.workers.media_worker.*': {'queue': 'celery'},
+            'app.workers.analytics_worker.*': {'queue': 'celery'},
+            'app.workers.ai_worker.*': {'queue': 'celery'},
+            'app.workers.notification_worker.*': {'queue': 'celery'},
+            'app.workers.cleanup_worker.*': {'queue': 'celery'},
         },
         
         # Task execution
@@ -74,17 +74,17 @@ def create_celery_app() -> Celery:
             'cleanup-old-data': {
                 'task': 'app.workers.cleanup_worker.cleanup_old_data',
                 'schedule': 3600.0,  # Every hour
-                'options': {'queue': 'cleanup'}
+                'options': {'queue': 'celery'}
             },
             'process-analytics': {
                 'task': 'app.workers.analytics_worker.process_daily_analytics',
                 'schedule': 86400.0,  # Daily
-                'options': {'queue': 'analytics'}
+                'options': {'queue': 'celery'}
             },
             'health-check': {
                 'task': 'app.workers.cleanup_worker.health_check',
                 'schedule': 300.0,  # Every 5 minutes
-                'options': {'queue': 'cleanup'}
+                'options': {'queue': 'celery'}
             },
         },
         
@@ -134,7 +134,7 @@ class BaseTask(celery_app.Task):
             extra={
                 "task_id": task_id,
                 "task_name": self.name,
-                "args": args,
+                "task_args": args,
                 "kwargs": kwargs,
                 "result": str(retval)[:200] if retval else None
             }
@@ -154,7 +154,7 @@ class BaseTask(celery_app.Task):
             extra={
                 "task_id": task_id,
                 "task_name": self.name,
-                "args": args,
+                "task_args": args,
                 "kwargs": kwargs,
                 "error": str(exc),
                 "traceback": str(einfo)
@@ -176,7 +176,7 @@ class BaseTask(celery_app.Task):
             extra={
                 "task_id": task_id,
                 "task_name": self.name,
-                "args": args,
+                "task_args": args,
                 "kwargs": kwargs,
                 "error": str(exc),
                 "retry_count": self.request.retries
@@ -200,8 +200,8 @@ def task_prerun_handler(sender=None, task_id=None, task=None, args=None, kwargs=
         extra={
             "task_id": task_id,
             "task_name": task.name,
-            "args": args,
-            "kwargs": kwargs
+            "task_args": args,
+            "task_kwargs": kwargs
         }
     )
 
@@ -224,8 +224,8 @@ def task_postrun_handler(
             "task_id": task_id,
             "task_name": task.name,
             "state": state,
-            "args": args,
-            "kwargs": kwargs
+            "task_args": args,
+            "task_kwargs": kwargs
         }
     )
 
@@ -238,7 +238,7 @@ def worker_ready_handler(sender=None, **kwargs):
         extra={
             "worker_hostname": sender.hostname,
             "worker_pool": type(sender.pool).__name__,
-            "worker_concurrency": sender.concurrency
+            "worker_concurrency": getattr(sender, 'concurrency', 'unknown')
         }
     )
 

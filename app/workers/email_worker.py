@@ -408,16 +408,44 @@ The Plugs Team
         except Exception as e:
             logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
         
-        # Fallback to SMTP
-        result = send_email.delay(
-            to_email=to_email,
-            subject=subject,
-            body=plain_content,
-            html_body=html_content
-        )
-        
-        logger.info(f"OTP email sent via SMTP to {to_email}")
-        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        # Fallback to SMTP - send directly, don't queue another task
+        try:
+            if not settings.smtp_host:
+                raise Exception("SMTP not configured for fallback")
+            
+            # Create message
+            message = MIMEMultipart("alternative")
+            message["Subject"] = subject
+            message["From"] = settings.smtp_username or settings.sendgrid_from_email
+            message["To"] = to_email
+            
+            # Add text part
+            text_part = MIMEText(plain_content, "plain")
+            message.attach(text_part)
+            
+            # Add HTML part
+            html_part = MIMEText(html_content, "html")
+            message.attach(html_part)
+            
+            # Send email
+            context = ssl.create_default_context()
+            
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                if settings.smtp_use_tls:
+                    server.starttls(context=context)
+                
+                if settings.smtp_username and settings.smtp_password:
+                    server.login(settings.smtp_username, settings.smtp_password)
+                
+                text = message.as_string()
+                server.sendmail(settings.smtp_username or settings.sendgrid_from_email, to_email, text)
+            
+            logger.info(f"OTP email sent via SMTP to {to_email}")
+            return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+            
+        except Exception as smtp_error:
+            logger.error(f"SMTP fallback also failed: {smtp_error}")
+            raise Exception(f"Both SendGrid and SMTP failed. SendGrid error: {e}, SMTP error: {smtp_error}")
         
     except Exception as e:
         logger.error(f"Failed to send OTP email to {to_email}: {e}")
@@ -544,16 +572,44 @@ The Plugs Team
         except Exception as e:
             logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
         
-        # Fallback to SMTP
-        result = send_email.delay(
-            to_email=to_email,
-            subject=subject,
-            body=plain_content,
-            html_body=html_content
-        )
-        
-        logger.info(f"Welcome email sent via SMTP to {to_email}")
-        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        # Fallback to SMTP - send directly, don't queue another task
+        try:
+            if not settings.smtp_host:
+                raise Exception("SMTP not configured for fallback")
+            
+            # Create message
+            message = MIMEMultipart("alternative")
+            message["Subject"] = subject
+            message["From"] = settings.smtp_username or settings.sendgrid_from_email
+            message["To"] = to_email
+            
+            # Add text part
+            text_part = MIMEText(plain_content, "plain")
+            message.attach(text_part)
+            
+            # Add HTML part
+            html_part = MIMEText(html_content, "html")
+            message.attach(html_part)
+            
+            # Send email
+            context = ssl.create_default_context()
+            
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                if settings.smtp_use_tls:
+                    server.starttls(context=context)
+                
+                if settings.smtp_username and settings.smtp_password:
+                    server.login(settings.smtp_username, settings.smtp_password)
+                
+                text = message.as_string()
+                server.sendmail(settings.smtp_username or settings.sendgrid_from_email, to_email, text)
+            
+            logger.info(f"Welcome email sent via SMTP to {to_email}")
+            return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+            
+        except Exception as smtp_error:
+            logger.error(f"SMTP fallback also failed: {smtp_error}")
+            raise Exception(f"Both SendGrid and SMTP failed. SendGrid error: {e}, SMTP error: {smtp_error}")
         
     except Exception as e:
         logger.error(f"Failed to send welcome email to {to_email}: {e}")
@@ -657,16 +713,44 @@ The Plugs Team
         except Exception as e:
             logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
         
-        # Fallback to SMTP
-        result = send_email.delay(
-            to_email=to_email,
-            subject=subject,
-            body=plain_content,
-            html_body=html_content
-        )
-        
-        logger.info(f"Password reset email sent via SMTP to {to_email}")
-        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        # Fallback to SMTP - send directly, don't queue another task
+        try:
+            if not settings.smtp_host:
+                raise Exception("SMTP not configured for fallback")
+            
+            # Create message
+            message = MIMEMultipart("alternative")
+            message["Subject"] = subject
+            message["From"] = settings.smtp_username or settings.sendgrid_from_email
+            message["To"] = to_email
+            
+            # Add text part
+            text_part = MIMEText(plain_content, "plain")
+            message.attach(text_part)
+            
+            # Add HTML part
+            html_part = MIMEText(html_content, "html")
+            message.attach(html_part)
+            
+            # Send email
+            context = ssl.create_default_context()
+            
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                if settings.smtp_use_tls:
+                    server.starttls(context=context)
+                
+                if settings.smtp_username and settings.smtp_password:
+                    server.login(settings.smtp_username, settings.smtp_password)
+                
+                text = message.as_string()
+                server.sendmail(settings.smtp_username or settings.sendgrid_from_email, to_email, text)
+            
+            logger.info(f"Password reset email sent via SMTP to {to_email}")
+            return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+            
+        except Exception as smtp_error:
+            logger.error(f"SMTP fallback also failed: {smtp_error}")
+            raise Exception(f"Both SendGrid and SMTP failed. SendGrid error: {e}, SMTP error: {smtp_error}")
         
     except Exception as e:
         logger.error(f"Failed to send password reset email to {to_email}: {e}")
