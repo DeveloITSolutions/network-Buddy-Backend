@@ -1,0 +1,70 @@
+# Simple Docker Compose for The Plugs Development Environment
+services:
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: the_plugs_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # The Plugs API Application
+  api:
+    build: .
+    container_name: the_plugs_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - SECRET_KEY=${SECRET_KEY}
+      - SENDGRID_API_KEY=
+      - SENDGRID_FROM_EMAIL=noreply@theplugs.com
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080,http://localhost:3001
+      - CORS_METHODS=GET,POST,PUT,DELETE,OPTIONS
+      - CORS_HEADERS=*
+    depends_on:
+      - redis
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    build: .
+    container_name: the_plugs_celery_worker
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - SECRET_KEY=${SECRET_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+    depends_on:
+      - redis
+      - api
+
+  # Redis Commander (Redis Administration) - Optional
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: the_plugs_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+
+# Volumes
+volumes:
+  redis_data:
