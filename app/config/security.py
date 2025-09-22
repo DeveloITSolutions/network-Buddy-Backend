@@ -253,10 +253,10 @@ class CORSConfig:
             Dict[str, Any]: CORS configuration parameters
         """
         return {
-            "allow_origins": settings.cors_origins,
+            "allow_origins": settings.cors_origins_list,
             "allow_credentials": settings.cors_credentials,
-            "allow_methods": settings.cors_methods,
-            "allow_headers": settings.cors_headers,
+            "allow_methods": settings.cors_methods_list,
+            "allow_headers": settings.cors_headers_list,
             "expose_headers": ["X-Request-ID", "X-Correlation-ID"],
             "max_age": 86400,  # 24 hours
         }
@@ -272,10 +272,10 @@ class CORSConfig:
         Returns:
             bool: True if origin is allowed, False otherwise
         """
-        if "*" in settings.cors_origins:
+        if "*" in settings.cors_origins_list:
             return True
         
-        return origin in settings.cors_origins
+        return origin in settings.cors_origins_list
 
 
 class RateLimitConfig:

@@ -6,7 +6,9 @@ settings, database configuration, logging, and security settings.
 """
 
 from .settings import settings, Environment
-from .database import db_config, get_database_session, get_database_engine, Base
+from .database import db_config, get_database_engine
+from app.core.dependencies import get_database_session
+from app.models.base import BaseModel as Base
 from .logging import (
     setup_logging,
     get_logger,

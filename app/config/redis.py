@@ -7,7 +7,7 @@ from redis.connection import ConnectionPool
 import json
 import pickle
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .settings import settings
 

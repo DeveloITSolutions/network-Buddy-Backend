@@ -204,15 +204,80 @@ Coverage reports are generated in `htmlcov/` directory.
 
 ## 🐳 Docker Deployment
 
-### Development
+### Quick Start with Docker
+
+**One-command setup:**
 ```bash
-docker-compose up -d
+# Start development environment
+./scripts/docker-start.sh
+
+# Start in background
+./scripts/docker-start.sh development true
+
+# Start production environment
+./scripts/docker-start.sh production
 ```
 
-### Production
+### Manual Docker Setup
+
+1. **Create Docker environment file:**
+   ```bash
+   cp .env.docker.example .env.docker
+   # Edit .env.docker with your configuration
+   ```
+
+2. **Start development environment:**
+   ```bash
+   docker-compose --env-file .env.docker up -d
+   ```
+
+3. **Start production environment:**
+   ```bash
+   docker-compose --env-file .env.docker -f docker-compose.prod.yml up -d
+   ```
+
+### Docker Services
+
+The Docker setup includes:
+- **API**: FastAPI application (port 8000)
+- **PostgreSQL**: Database (port 5432)
+- **Redis**: Cache and message broker (port 6379)
+- **Celery Worker**: Background task processing
+- **Celery Beat**: Scheduled tasks
+- **Celery Flower**: Task monitoring (port 5555)
+- **pgAdmin**: Database administration (port 5050)
+- **Redis Commander**: Redis administration (port 8081)
+
+### Docker Management
+
+Use the management script for common operations:
+
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+# Service management
+./scripts/docker-manage.sh start dev      # Start development
+./scripts/docker-manage.sh stop           # Stop all services
+./scripts/docker-manage.sh restart api    # Restart API service
+./scripts/docker-manage.sh status         # Show service status
+
+# Database operations
+./scripts/docker-manage.sh db-shell       # PostgreSQL shell
+./scripts/docker-manage.sh db-migrate     # Run migrations
+./scripts/docker-manage.sh db-backup      # Backup database
+
+# Development
+./scripts/docker-manage.sh shell api      # Open shell in API container
+./scripts/docker-manage.sh logs api       # View API logs
+./scripts/docker-manage.sh health         # Check service health
 ```
+
+### Database Configuration
+
+The Docker setup automatically:
+- Creates PostgreSQL database with optimized settings
+- Sets up database user and permissions
+- Runs initialization scripts
+- Configures connection pooling
+- Sets up test database
 
 ## ☸️ Kubernetes Deployment
 
@@ -314,6 +379,12 @@ celery -A app.workers.celery_app flower
 
 ### Core Endpoints
 - **Authentication**: `/api/v1/auth/*`
+  - `POST /auth/send-verification` - Send email OTP
+  - `POST /auth/verify-email` - Verify OTP code
+  - `POST /auth/register` - User registration
+  - `POST /auth/login` - User login
+  - `POST /auth/forgot-password` - Password reset request
+  - `POST /auth/reset-password` - Password reset confirmation
 - **Users**: `/api/v1/users/*`
 - **Organizations**: `/api/v1/organizations/*`
 - **Events**: `/api/v1/events/*`

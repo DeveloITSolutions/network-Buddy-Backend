@@ -1,14 +1,21 @@
 """
-Email worker for background email processing.
+Email worker for background email processing with SendGrid support.
 """
 from typing import List, Dict, Any, Optional
 import logging
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
-from email.mime.base import MimeBase
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
 from email import encoders
 import smtplib
 import ssl
+
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, From, To, Subject, PlainTextContent, HtmlContent
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
 
 from .celery_app import celery_app
 from app.config.settings import settings
@@ -46,24 +53,24 @@ def send_email(
             return {"status": "skipped", "reason": "SMTP not configured"}
         
         # Create message
-        message = MimeMultipart("alternative")
+        message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = from_email or settings.smtp_username
         message["To"] = to_email
         
         # Add text part
-        text_part = MimeText(body, "plain")
+        text_part = MIMEText(body, "plain")
         message.attach(text_part)
         
         # Add HTML part if provided
         if html_body:
-            html_part = MimeText(html_body, "html")
+            html_part = MIMEText(html_body, "html")
             message.attach(html_part)
         
         # Add attachments if provided
         if attachments:
             for attachment in attachments:
-                part = MimeBase("application", "octet-stream")
+                part = MIMEBase("application", "octet-stream")
                 part.set_payload(attachment["content"])
                 encoders.encode_base64(part)
                 part.add_header(
@@ -269,4 +276,398 @@ def send_notification_email(
         
     except Exception as e:
         logger.error(f"Failed to send notification email {notification_type} to {to_email}: {e}")
+        raise
+
+
+def _send_with_sendgrid(
+    to_email: str,
+    subject: str,
+    plain_content: str,
+    html_content: Optional[str] = None,
+    from_email: Optional[str] = None
+) -> Dict[str, Any]:
+    """Send email using SendGrid API."""
+    try:
+        if not SENDGRID_AVAILABLE:
+            raise Exception("SendGrid library not installed")
+        
+        if not settings.sendgrid_api_key:
+            raise Exception("SendGrid API key not configured")
+        
+        # Create SendGrid client
+        sg = SendGridAPIClient(api_key=settings.sendgrid_api_key)
+        
+        # Create mail object
+        from_email = from_email or settings.sendgrid_from_email or settings.smtp_username
+        
+        message = Mail(
+            from_email=From(from_email, settings.app_name),
+            to_emails=To(to_email),
+            subject=Subject(subject),
+            plain_text_content=PlainTextContent(plain_content)
+        )
+        
+        if html_content:
+            message.html_content = HtmlContent(html_content)
+        
+        # Send email
+        response = sg.send(message)
+        
+        return {
+            "status": "sent",
+            "provider": "sendgrid",
+            "status_code": response.status_code,
+            "message_id": response.headers.get("X-Message-Id")
+        }
+        
+    except Exception as e:
+        logger.error(f"SendGrid send failed: {e}")
+        raise
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def send_otp_email(
+    self,
+    to_email: str,
+    otp_code: str,
+    expires_minutes: int = 5
+) -> Dict[str, Any]:
+    """
+    Send OTP verification email.
+    
+    Args:
+        to_email: Recipient email address
+        otp_code: 6-digit OTP code
+        expires_minutes: OTP expiration time in minutes
+        
+    Returns:
+        Dict with send status
+    """
+    try:
+        subject = "Your Verification Code - The Plugs"
+        
+        # Plain text content
+        plain_content = f"""
+Your verification code is: {otp_code}
+
+This code will expire in {expires_minutes} minutes.
+
+If you didn't request this code, please ignore this email.
+
+Best regards,
+The Plugs Team
+        """.strip()
+        
+        # HTML content
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Code</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; }}
+        .header h1 {{ color: #ffffff; margin: 0; font-size: 28px; font-weight: 600; }}
+        .content {{ padding: 40px 20px; text-align: center; }}
+        .otp-code {{ background-color: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 8px; padding: 20px; margin: 30px 0; font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #495057; }}
+        .footer {{ padding: 20px; text-align: center; color: #6c757d; font-size: 14px; border-top: 1px solid #dee2e6; }}
+        .warning {{ background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 15px; margin: 20px 0; color: #856404; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>The Plugs</h1>
+        </div>
+        <div class="content">
+            <h2>Email Verification</h2>
+            <p>Please use the following verification code to complete your registration:</p>
+            <div class="otp-code">{otp_code}</div>
+            <div class="warning">
+                <strong>Important:</strong> This code will expire in {expires_minutes} minutes.
+            </div>
+            <p>If you didn't request this code, please ignore this email.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2024 The Plugs. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+        """
+        
+        # Try SendGrid first, fallback to SMTP
+        try:
+            if settings.sendgrid_api_key:
+                result = _send_with_sendgrid(to_email, subject, plain_content, html_content)
+                logger.info(f"OTP email sent via SendGrid to {to_email}")
+                return result
+        except Exception as e:
+            logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
+        
+        # Fallback to SMTP
+        result = send_email.delay(
+            to_email=to_email,
+            subject=subject,
+            body=plain_content,
+            html_body=html_content
+        )
+        
+        logger.info(f"OTP email sent via SMTP to {to_email}")
+        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        
+    except Exception as e:
+        logger.error(f"Failed to send OTP email to {to_email}: {e}")
+        raise
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def send_welcome_email(
+    self,
+    to_email: str,
+    user_name: str
+) -> Dict[str, Any]:
+    """
+    Send welcome email to new users.
+    
+    Args:
+        to_email: Recipient email address
+        user_name: User's full name
+        
+    Returns:
+        Dict with send status
+    """
+    try:
+        subject = f"Welcome to The Plugs, {user_name.split()[0]}!"
+        
+        # Plain text content
+        plain_content = f"""
+Hi {user_name},
+
+Welcome to The Plugs! We're excited to have you join our professional networking community.
+
+Your account has been successfully created and verified. You can now:
+- Connect with professionals across industries
+- Discover and attend networking events
+- Build meaningful business relationships
+- Expand your professional network
+
+Get started by logging in to your account and completing your profile.
+
+If you have any questions, feel free to reach out to our support team.
+
+Best regards,
+The Plugs Team
+        """.strip()
+        
+        # HTML content
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to The Plugs</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; }}
+        .header h1 {{ color: #ffffff; margin: 0; font-size: 28px; font-weight: 600; }}
+        .content {{ padding: 40px 20px; }}
+        .welcome-message {{ text-align: center; margin-bottom: 30px; }}
+        .features {{ margin: 30px 0; }}
+        .feature {{ display: flex; align-items: center; margin: 15px 0; padding: 15px; background-color: #f8f9fa; border-radius: 8px; }}
+        .feature-icon {{ width: 24px; height: 24px; margin-right: 15px; background-color: #667eea; border-radius: 50%; }}
+        .cta-button {{ display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }}
+        .footer {{ padding: 20px; text-align: center; color: #6c757d; font-size: 14px; border-top: 1px solid #dee2e6; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>The Plugs</h1>
+        </div>
+        <div class="content">
+            <div class="welcome-message">
+                <h2>Welcome, {user_name}! 🎉</h2>
+                <p>We're excited to have you join our professional networking community.</p>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Connect with Professionals</strong><br>
+                        Build meaningful relationships across industries
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Discover Events</strong><br>
+                        Find and attend networking events in your area
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon"></div>
+                    <div>
+                        <strong>Grow Your Network</strong><br>
+                        Expand your professional connections and opportunities
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center;">
+                <p>Ready to get started?</p>
+                <a href="#" class="cta-button">Complete Your Profile</a>
+            </div>
+            
+            <p>If you have any questions, feel free to reach out to our support team.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2024 The Plugs. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+        """
+        
+        # Try SendGrid first, fallback to SMTP
+        try:
+            if settings.sendgrid_api_key:
+                result = _send_with_sendgrid(to_email, subject, plain_content, html_content)
+                logger.info(f"Welcome email sent via SendGrid to {to_email}")
+                return result
+        except Exception as e:
+            logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
+        
+        # Fallback to SMTP
+        result = send_email.delay(
+            to_email=to_email,
+            subject=subject,
+            body=plain_content,
+            html_body=html_content
+        )
+        
+        logger.info(f"Welcome email sent via SMTP to {to_email}")
+        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        
+    except Exception as e:
+        logger.error(f"Failed to send welcome email to {to_email}: {e}")
+        raise
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def send_password_reset_email(
+    self,
+    to_email: str,
+    user_name: str,
+    reset_token: str
+) -> Dict[str, Any]:
+    """
+    Send password reset email.
+    
+    Args:
+        to_email: Recipient email address
+        user_name: User's full name
+        reset_token: Password reset token
+        
+    Returns:
+        Dict with send status
+    """
+    try:
+        subject = "Password Reset Request - The Plugs"
+        
+        # Create reset URL (you'll need to adjust this based on your frontend)
+        reset_url = f"{settings.frontend_url}/reset-password?token={reset_token}&email={to_email}"
+        
+        # Plain text content
+        plain_content = f"""
+Hi {user_name},
+
+You requested a password reset for your The Plugs account.
+
+Please use the following link to reset your password:
+{reset_url}
+
+This link will expire in 1 hour for security reasons.
+
+If you didn't request this password reset, please ignore this email.
+
+Best regards,
+The Plugs Team
+        """.strip()
+        
+        # HTML content
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; }}
+        .header h1 {{ color: #ffffff; margin: 0; font-size: 28px; font-weight: 600; }}
+        .content {{ padding: 40px 20px; }}
+        .reset-button {{ display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }}
+        .warning {{ background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 15px; margin: 20px 0; color: #856404; }}
+        .footer {{ padding: 20px; text-align: center; color: #6c757d; font-size: 14px; border-top: 1px solid #dee2e6; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>The Plugs</h1>
+        </div>
+        <div class="content">
+            <h2>Password Reset Request</h2>
+            <p>Hi {user_name},</p>
+            <p>You requested a password reset for your The Plugs account.</p>
+            
+            <div style="text-align: center;">
+                <a href="{reset_url}" class="reset-button">Reset Your Password</a>
+            </div>
+            
+            <div class="warning">
+                <strong>Important:</strong> This link will expire in 1 hour for security reasons.
+            </div>
+            
+            <p>If you didn't request this password reset, please ignore this email.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2024 The Plugs. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+        """
+        
+        # Try SendGrid first, fallback to SMTP
+        try:
+            if settings.sendgrid_api_key:
+                result = _send_with_sendgrid(to_email, subject, plain_content, html_content)
+                logger.info(f"Password reset email sent via SendGrid to {to_email}")
+                return result
+        except Exception as e:
+            logger.warning(f"SendGrid failed, falling back to SMTP: {e}")
+        
+        # Fallback to SMTP
+        result = send_email.delay(
+            to_email=to_email,
+            subject=subject,
+            body=plain_content,
+            html_body=html_content
+        )
+        
+        logger.info(f"Password reset email sent via SMTP to {to_email}")
+        return {"status": "sent", "provider": "smtp", "task_id": self.request.id}
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {to_email}: {e}")
         raise

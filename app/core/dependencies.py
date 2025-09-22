@@ -66,24 +66,7 @@ def get_redis_client() -> redis.Redis:
     return redis_config.client
 
 
-def get_cache_manager_dependency():
-    """
-    FastAPI dependency for cache manager.
-    
-    Returns:
-        CacheManager: Cache manager instance
-    """
-    return get_cache_manager()
-
-
-def get_session_manager_dependency():
-    """
-    FastAPI dependency for session manager.
-    
-    Returns:
-        SessionManager: Session manager instance
-    """
-    return get_session_manager()
+# Removed unused cache and session manager dependencies
 
 
 def get_redis_health() -> bool:
@@ -200,8 +183,6 @@ DatabaseEngine = Annotated[Engine, Depends(get_database_engine)]
 DatabaseHealth = Annotated[bool, Depends(get_database_health)]
 RedisClient = Annotated[redis.Redis, Depends(get_redis_client)]
 RedisHealth = Annotated[bool, Depends(get_redis_health)]
-CacheManager = Annotated[object, Depends(get_cache_manager_dependency)]
-SessionManager = Annotated[object, Depends(get_session_manager_dependency)]
 CurrentUser = Annotated[dict, Depends(get_current_user_required)]
 CurrentActiveUser = Annotated[dict, Depends(get_current_active_user)]
 CurrentAdminUser = Annotated[dict, Depends(get_current_admin_user)]

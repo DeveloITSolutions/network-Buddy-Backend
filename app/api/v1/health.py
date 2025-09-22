@@ -11,8 +11,8 @@ router = APIRouter()
 
 @router.get("/")
 async def health_check(
-    db_health: DatabaseHealth = Depends(),
-    redis_health: RedisHealth = Depends()
+    db_health: DatabaseHealth,
+    redis_health: RedisHealth
 ) -> Dict[str, Any]:
     """
     Comprehensive health check endpoint.
@@ -30,7 +30,7 @@ async def health_check(
 
 
 @router.get("/database")
-async def database_health(db_health: DatabaseHealth = Depends()) -> Dict[str, str]:
+async def database_health(db_health: DatabaseHealth) -> Dict[str, str]:
     """Database-specific health check."""
     return {
         "service": "database",
@@ -39,7 +39,7 @@ async def database_health(db_health: DatabaseHealth = Depends()) -> Dict[str, st
 
 
 @router.get("/redis")
-async def redis_health(redis_health: RedisHealth = Depends()) -> Dict[str, str]:
+async def redis_health(redis_health: RedisHealth) -> Dict[str, str]:
     """Redis-specific health check."""
     return {
         "service": "redis", 

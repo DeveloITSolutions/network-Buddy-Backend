@@ -146,8 +146,10 @@ class DatabaseConfig:
             bool: True if database is healthy, False otherwise
         """
         try:
-            with self.get_session() as session:
-                session.execute("SELECT 1")
+            from sqlalchemy import text
+            session = next(self.get_session())
+            session.execute(text("SELECT 1"))
+            session.close()
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")

@@ -3,7 +3,8 @@ Core application settings with environment-based configuration.
 """
 import os
 from typing import Optional, List
-from pydantic import BaseSettings, Field, validator
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 from enum import Enum
 
 
@@ -52,10 +53,10 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = Field(default=7, description="JWT refresh token expiration in days")
     
     # CORS Settings
-    cors_origins: List[str] = Field(default=["*"], description="CORS allowed origins")
+    cors_origins: str = Field(default="*", description="CORS allowed origins (comma-separated)")
     cors_credentials: bool = Field(default=True, description="CORS allow credentials")
-    cors_methods: List[str] = Field(default=["*"], description="CORS allowed methods")
-    cors_headers: List[str] = Field(default=["*"], description="CORS allowed headers")
+    cors_methods: str = Field(default="*", description="CORS allowed methods (comma-separated)")
+    cors_headers: str = Field(default="*", description="CORS allowed headers (comma-separated)")
     
     # Logging Settings
     log_level: str = Field(default="INFO", description="Logging level")
@@ -69,34 +70,41 @@ class Settings(BaseSettings):
     smtp_password: Optional[str] = Field(default=None, description="SMTP password")
     smtp_use_tls: bool = Field(default=True, description="Use TLS for SMTP")
     
+    # SendGrid Settings (preferred email provider)
+    sendgrid_api_key: Optional[str] = Field(default=None, description="SendGrid API key")
+    sendgrid_from_email: Optional[str] = Field(default=None, description="SendGrid from email address")
+    
+    # Frontend URL (for password reset links)
+    frontend_url: str = Field(default="http://localhost:3000", description="Frontend application URL")
+    
     # Celery Settings (for background tasks)
-    celery_broker_url: str = Field(default="redis://localhost:6379/1", description="Celery broker URL")
-    celery_result_backend: str = Field(default="redis://localhost:6379/2", description="Celery result backend URL")
+    celery_broker_url: str = Field(default="redis://redis:6379/1", description="Celery broker URL")
+    celery_result_backend: str = Field(default="redis://redis:6379/2", description="Celery result backend URL")
     
     # File Upload Settings
     max_file_size: int = Field(default=10 * 1024 * 1024, description="Max file size in bytes (10MB)")
     upload_path: str = Field(default="uploads", description="File upload directory")
     
-    @validator("cors_origins", pre=True)
-    def parse_cors_origins(cls, v):
-        """Parse CORS origins from string or list."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Get CORS origins as a list."""
+        if not self.cors_origins or self.cors_origins == "":
+            return ["*"]
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
     
-    @validator("cors_methods", pre=True)
-    def parse_cors_methods(cls, v):
-        """Parse CORS methods from string or list."""
-        if isinstance(v, str):
-            return [method.strip() for method in v.split(",")]
-        return v
+    @property
+    def cors_methods_list(self) -> List[str]:
+        """Get CORS methods as a list."""
+        if not self.cors_methods or self.cors_methods == "":
+            return ["*"]
+        return [method.strip() for method in self.cors_methods.split(",") if method.strip()]
     
-    @validator("cors_headers", pre=True)
-    def parse_cors_headers(cls, v):
-        """Parse CORS headers from string or list."""
-        if isinstance(v, str):
-            return [header.strip() for header in v.split(",")]
-        return v
+    @property
+    def cors_headers_list(self) -> List[str]:
+        """Get CORS headers as a list."""
+        if not self.cors_headers or self.cors_headers == "":
+            return ["*"]
+        return [header.strip() for header in self.cors_headers.split(",") if header.strip()]
     
     @validator("environment", pre=True)
     def validate_environment(cls, v):

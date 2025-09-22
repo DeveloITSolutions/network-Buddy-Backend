@@ -11,9 +11,8 @@ router = APIRouter()
 
 @router.get("/")
 async def list_organizations(
-    db: DatabaseSession = Depends(),
-    current_user: CurrentUser = Depends()
-):
+    db: DatabaseSession ,
+    current_user: CurrentUser ):
     """List organizations."""
     # TODO: Implement organization listing
     return {
@@ -24,9 +23,8 @@ async def list_organizations(
 
 @router.post("/")
 async def create_organization(
-    db: DatabaseSession = Depends(),
-    current_user: CurrentUser = Depends()
-):
+    db: DatabaseSession,
+    current_user: CurrentUser):
     """Create new organization."""
     # TODO: Implement organization creation
     return {
@@ -37,9 +35,8 @@ async def create_organization(
 @router.get("/{org_id}")
 async def get_organization(
     org_id: str,
-    db: DatabaseSession = Depends(),
-    current_user: CurrentUser = Depends()
-):
+    db: DatabaseSession,
+    current_user: CurrentUser):
     """Get specific organization by ID."""
     # TODO: Implement organization retrieval
     return {
@@ -51,9 +48,8 @@ async def get_organization(
 @router.put("/{org_id}")
 async def update_organization(
     org_id: str,
-    db: DatabaseSession = Depends(),
-    current_user: CurrentUser = Depends()
-):
+    db: DatabaseSession,
+    current_user: CurrentUser ):
     """Update organization information."""
     # TODO: Implement organization update
     return {
@@ -65,9 +61,8 @@ async def update_organization(
 @router.delete("/{org_id}")
 async def delete_organization(
     org_id: str,
-    db: DatabaseSession = Depends(),
-    current_user: CurrentUser = Depends()
-):
+    db: DatabaseSession ,
+    current_user: CurrentUser ):
     """Delete organization."""
     # TODO: Implement organization deletion
     return {

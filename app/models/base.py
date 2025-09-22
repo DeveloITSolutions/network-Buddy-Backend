@@ -2,7 +2,7 @@
 Base SQLAlchemy model with common fields and functionality.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import Boolean, DateTime, String, func
@@ -71,7 +71,7 @@ class BaseModel(DeclarativeBase):
     def soft_delete(self) -> None:
         """Mark the record as deleted without removing it from the database."""
         self.is_deleted = True
-        self.deleted_at = datetime.utcnow()
+        self.deleted_at = datetime.now(timezone.utc)
     
     def restore(self) -> None:
         """Restore a soft-deleted record."""

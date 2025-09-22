@@ -7,7 +7,7 @@ from . import (
     auth,
     health,
     users,
-    organizations,
+    # organizations,  # Removed - not needed for basic auth flow
     # events,
     # networking,
     # expenses,
@@ -22,10 +22,10 @@ from . import (
 router = APIRouter()
 
 # Include endpoint routers
-router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+router.include_router(auth.router, prefix="/auth")
 router.include_router(health.router, prefix="/health", tags=["Health"])
 router.include_router(users.router, prefix="/users", tags=["Users"])
-router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
+# router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])  # Removed
 
 # Uncomment these as you implement the corresponding modules
 # router.include_router(events.router, prefix="/events", tags=["Events"])
