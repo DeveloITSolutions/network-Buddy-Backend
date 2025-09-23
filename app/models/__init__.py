@@ -16,6 +16,8 @@ from .mixins import (
     TenantMixin,
     TimestampMixin,
 )
+from .user import User
+from .plug import Plug, PlugType, NetworkType, BusinessType, Priority
 
 __all__ = [
     # Base model
@@ -31,4 +33,12 @@ __all__ = [
     "AuditableEntityMixin",
     "TenantEntityMixin",
     "FullEntityMixin",
+    # Models
+    "User",
+    "Plug",
+    # Enums
+    "PlugType",
+    "NetworkType", 
+    "BusinessType",
+    "Priority",
 ]

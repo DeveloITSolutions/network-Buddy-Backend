@@ -2,9 +2,13 @@
 User model for authentication and user management.
 """
 from sqlalchemy import String, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import List, TYPE_CHECKING
 
 from .base import BaseModel
+
+if TYPE_CHECKING:
+    from .plug import Plug
 
 
 class User(BaseModel):
@@ -73,6 +77,14 @@ class User(BaseModel):
         default=True,
         nullable=False,
         doc="User active status"
+    )
+    
+    # Relationships
+    plugs: Mapped[List["Plug"]] = relationship(
+        "Plug",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        doc="User's plugs (targets and contacts)"
     )
     
     @property

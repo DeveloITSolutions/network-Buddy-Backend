@@ -1,0 +1,271 @@
+"""
+API endpoints for plug (target/contact) management.
+"""
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.core.dependencies import DatabaseSession, CurrentActiveUser
+from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
+from app.schemas.plug import (
+    TargetCreate, TargetUpdate, ContactCreate, ContactUpdate,
+    TargetToContactConversion, PlugResponse, PlugListResponse,
+    PlugFilters, PlugStats
+)
+from app.services.plug_service import PlugService
+
+router = APIRouter(tags=["Plugs"])
+
+
+def get_plug_service(db: DatabaseSession) -> PlugService:
+    """Dependency to get plug service instance."""
+    return PlugService(db)
+
+
+# Plug Management Endpoints (Unified for targets and contacts)
+@router.post("/", response_model=PlugResponse, status_code=status.HTTP_201_CREATED)
+async def create_plug(
+    plug_data: dict,  # Accept raw JSON to handle all fields
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Create a new plug (target or contact).
+    
+    - Requires JWT authentication
+    - If minimal data provided: Creates a TARGET
+    - If complete data provided: Creates a CONTACT
+    - Business logic automatically determines the type based on data completeness
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Extract basic fields to check data completeness
+        has_contact_info = bool(plug_data.get('email') or plug_data.get('primary_number'))
+        has_business_info = bool(plug_data.get('company') and plug_data.get('job_title'))
+        
+        if has_contact_info and has_business_info:
+            # Create as contact - validate with ContactCreate schema
+            contact_data = ContactCreate(**plug_data)
+            plug = await service.create_contact(user_id, contact_data)
+        else:
+            # Create as target - validate with TargetCreate schema
+            target_data = TargetCreate(**plug_data)
+            plug = await service.create_target(user_id, target_data)
+        
+        return PlugResponse.model_validate(plug)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.put("/{plug_id}", response_model=PlugResponse)
+async def update_plug(
+    plug_id: UUID,
+    plug_data: dict,  # Accept raw JSON for flexible updates
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Update an existing plug (target or contact).
+    
+    - Requires JWT authentication
+    - User can only update their own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Get the plug to determine its type
+        existing_plug = await service.get_user_plug(user_id, plug_id)
+        
+        if existing_plug.plug_type.value == "contact":
+            # Update as contact
+            update_data = ContactUpdate(**plug_data)
+            plug = await service.update_contact(user_id, plug_id, update_data)
+        else:
+            # Update as target
+            update_data = TargetUpdate(**plug_data)
+            plug = await service.update_target(user_id, plug_id, update_data)
+        
+        return PlugResponse.model_validate(plug)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{plug_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_plug(
+    plug_id: UUID,
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Delete a plug (soft delete).
+    
+    - Requires JWT authentication
+    - User can only delete their own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        await service.delete_plug(user_id, plug_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/{plug_id}", response_model=PlugResponse)
+async def get_plug(
+    plug_id: UUID,
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Get a specific plug (target or contact) by ID.
+    
+    - Requires JWT authentication
+    - User can only access their own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        plug = await service.get_user_plug(user_id, plug_id)
+        return PlugResponse.model_validate(plug)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/", response_model=PlugListResponse)
+async def list_plugs(
+    current_user: CurrentActiveUser,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Get paginated list of all plugs (targets and contacts) for authenticated user.
+    
+    - Requires JWT authentication
+    - Returns only the user's own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        filters = PlugFilters(plug_type=plug_type) if plug_type else None
+        plugs, total = await service.get_user_plugs(user_id, filters, skip, limit)
+        
+        # Calculate pagination info
+        pages = (total + limit - 1) // limit
+        current_page = skip // limit + 1
+        
+        return PlugListResponse(
+            items=[PlugResponse.model_validate(plug) for plug in plugs],
+            total=total,
+            page=current_page,
+            per_page=limit,
+            pages=pages,
+            has_next=current_page < pages,
+            has_prev=current_page > 1
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.get("/search", response_model=PlugListResponse)
+async def search_plugs(
+    current_user: CurrentActiveUser,
+    q: str = Query(..., min_length=1, description="Search query"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Search plugs by name, company, or email for authenticated user.
+    
+    - Requires JWT authentication
+    - Searches only the user's own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        filters = PlugFilters(plug_type=plug_type) if plug_type else None
+        plugs, total = await service.search_user_plugs(user_id, q, filters, skip, limit)
+        
+        # Calculate pagination info
+        pages = (total + limit - 1) // limit
+        current_page = skip // limit + 1
+        
+        return PlugListResponse(
+            items=[PlugResponse.model_validate(plug) for plug in plugs],
+            total=total,
+            page=current_page,
+            per_page=limit,
+            pages=pages,
+            has_next=current_page < pages,
+            has_prev=current_page > 1
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.get("/stats", response_model=PlugStats)
+async def get_plug_stats(
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Get statistics about authenticated user's plugs.
+    
+    - Requires JWT authentication
+    - Returns statistics for the user's own plugs only
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        stats = await service.get_plug_stats(user_id)
+        return stats
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+# Target to Contact Conversion (Special endpoint)
+@router.post("/{target_id}/convert", response_model=PlugResponse)
+async def convert_target_to_contact(
+    target_id: UUID,
+    conversion_data: TargetToContactConversion,
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Convert a target to a contact with additional information.
+    
+    - Requires JWT authentication
+    - User can only convert their own targets
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        plug = await service.convert_target_to_contact(user_id, target_id, conversion_data)
+        return PlugResponse.model_validate(plug)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

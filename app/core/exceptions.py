@@ -37,3 +37,8 @@ class DatabaseError(BaseApplicationException):
 class TransactionError(DatabaseError):
     """Raised when database transaction operations fail."""
     pass
+
+
+class BusinessLogicError(BaseApplicationException):
+    """Raised when business logic validation fails."""
+    pass

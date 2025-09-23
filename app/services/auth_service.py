@@ -23,6 +23,8 @@ from app.schemas.auth import (
 )
 from app.services.base_service import BaseService
 from app.services.cache_service import CacheService
+from app.core.rate_limiter import rate_limiter
+from app.core.security_logger import security_audit_logger, SecurityEventType
 
 logger = logging.getLogger(__name__)
 
@@ -191,28 +193,83 @@ class AuthService(BaseService[User]):
     
     # Removed register_user method - no signup functionality needed
     
-    async def login_user(self, request: UserLoginRequest) -> AuthResponse:
-        """Authenticate user and return tokens."""
+    async def login_user(self, request: UserLoginRequest, ip_address: str = None, user_agent: str = None) -> AuthResponse:
+        """Authenticate user and return tokens with enhanced security."""
+        email = request.email.lower().strip()
+        
         try:
+            # Check if account is locked
+            is_locked, unlock_time = rate_limiter.is_account_locked(email)
+            if is_locked:
+                security_audit_logger.log_login_attempt(
+                    email=email,
+                    success=False,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    failure_reason="account_locked"
+                )
+                raise ValidationError(f"Account temporarily locked. Try again in {unlock_time} seconds.")
+            
             # Get user
-            user = self._get_user_by_email(request.email)
+            user = self._get_user_by_email(email)
             if not user:
+                security_audit_logger.log_login_attempt(
+                    email=email,
+                    success=False,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    failure_reason="user_not_found"
+                )
                 raise ValidationError("Invalid email or password")
             
             # Verify password
             if not security_config.verify_password(request.password, user.password):
+                security_audit_logger.log_login_attempt(
+                    email=email,
+                    success=False,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    user_id=str(user.id),
+                    failure_reason="invalid_password"
+                )
+                
+                # Check for repeated failures and lock account if necessary
+                failed_attempts = rate_limiter.check_failed_attempts(email)
+                if failed_attempts >= 10:  # Lock after 10 failed attempts
+                    rate_limiter.lock_account(email, duration=3600)  # 1 hour lockout
+                    security_audit_logger.log_account_lockout(
+                        email=email,
+                        duration=3600,
+                        reason="repeated_failed_login_attempts",
+                        ip_address=ip_address
+                    )
+                
                 raise ValidationError("Invalid email or password")
             
             # Check if user is active
             if not user.is_active:
+                security_audit_logger.log_login_attempt(
+                    email=email,
+                    success=False,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    user_id=str(user.id),
+                    failure_reason="account_deactivated"
+                )
                 raise ValidationError("Account is deactivated")
-            
-            # Note: Email verification removed as per simplified schema
-            # Note: last_login field removed as per simplified schema
             
             # Create tokens
             tokens = self._create_auth_tokens(user)
             user_response = self._user_to_response(user)
+            
+            # Log successful login
+            security_audit_logger.log_login_attempt(
+                email=email,
+                success=True,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                user_id=str(user.id)
+            )
             
             self.logger.info(f"User logged in successfully: {user.email}")
             

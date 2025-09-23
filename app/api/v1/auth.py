@@ -1,9 +1,10 @@
 """
 Authentication endpoints for The Plugs platform.
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 
-from app.core.dependencies import DatabaseSession
+from app.core.dependencies import DatabaseSession, CurrentActiveUser
+from app.core.rate_limiter import rate_limit, get_client_identifier
 from app.services.auth_service import AuthService
 from app.schemas.auth import (
     UserLoginRequest, ResetPasswordRequest, SendOTPRequest,
@@ -17,9 +18,11 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=AuthResponse)
+@rate_limit("login", lambda req, db: req.email.lower().strip())
 async def login_user(
     request: UserLoginRequest,
-    db: DatabaseSession
+    db: DatabaseSession,
+    http_request: Request
 ):
     """
     User login with email and password.
@@ -38,7 +41,9 @@ async def login_user(
     """
     try:
         auth_service = AuthService(db)
-        return await auth_service.login_user(request)
+        ip_address = get_client_identifier(http_request)
+        user_agent = http_request.headers.get("User-Agent")
+        return await auth_service.login_user(request, ip_address, user_agent)
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,9 +88,11 @@ async def reset_password(
 
 
 @router.post("/send-otp", response_model=OTPResponse)
+@rate_limit("otp_send", lambda req, db, http_req: req.email.lower().strip())
 async def send_otp(
     request: SendOTPRequest,
-    db: DatabaseSession
+    db: DatabaseSession,
+    http_request: Request
 ):
     """
     Send OTP to user's email.
@@ -105,7 +112,9 @@ async def send_otp(
     """
     try:
         auth_service = AuthService(db)
-        return await auth_service.send_otp(request)
+        ip_address = get_client_identifier(http_request)
+        user_agent = http_request.headers.get("User-Agent")
+        return await auth_service.send_otp(request, ip_address, user_agent)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -114,9 +123,11 @@ async def send_otp(
 
 
 @router.post("/verify-otp", response_model=VerifyOTPResponse)
+@rate_limit("otp_verify", lambda req, db, http_req: req.email.lower().strip())
 async def verify_otp(
     request: VerifyOTPRequest,
-    db: DatabaseSession
+    db: DatabaseSession,
+    http_request: Request
 ):
     """
     Verify OTP and return token for password change.
@@ -136,7 +147,9 @@ async def verify_otp(
     """
     try:
         auth_service = AuthService(db)
-        return await auth_service.verify_otp(request)
+        ip_address = get_client_identifier(http_request)
+        user_agent = http_request.headers.get("User-Agent")
+        return await auth_service.verify_otp(request, ip_address, user_agent)
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,9 +163,11 @@ async def verify_otp(
 
 
 @router.post("/change-password", response_model=MessageResponse)
+@rate_limit("password_change", lambda req, db, http_req: req.email.lower().strip())
 async def change_password(
     request: ChangePasswordRequest,
-    db: DatabaseSession
+    db: DatabaseSession,
+    http_request: Request
 ):
     """
     Change password using verification token.
@@ -172,7 +187,9 @@ async def change_password(
     """
     try:
         auth_service = AuthService(db)
-        return await auth_service.change_password(request)
+        ip_address = get_client_identifier(http_request)
+        user_agent = http_request.headers.get("User-Agent")
+        return await auth_service.change_password(request, ip_address, user_agent)
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -190,11 +207,11 @@ async def change_password(
         )
 
 
-@router.put("/timezone/{user_id}", response_model=TimezoneResponse)
+@router.put("/timezone", response_model=TimezoneResponse)
 async def update_timezone(
-    user_id: str,
     request: UpdateTimezoneRequest,
-    db: DatabaseSession
+    db: DatabaseSession,
+    current_user: CurrentActiveUser
 ):
     """
     Update user's timezone.
