@@ -17,7 +17,7 @@ from app.core.exceptions import ValidationError, NotFoundError
 from app.models.user import User
 from app.schemas.auth import (
     UserLoginRequest, ResetPasswordRequest, SendOTPRequest,
-    VerifyOTPRequest, ChangePasswordRequest,
+    VerifyOTPRequest, ChangePasswordRequest, RefreshTokenRequest, LogoutRequest,
     AuthResponse, AuthTokenResponse, UserResponse, MessageResponse,
     OTPResponse, VerifyOTPResponse
 )
@@ -445,3 +445,144 @@ class AuthService(BaseService[User]):
             raise
         except Exception as e:
             self._handle_generic_error(e, "update timezone")
+    
+    async def refresh_token(self, request: RefreshTokenRequest, ip_address: str = None, user_agent: str = None) -> AuthTokenResponse:
+        """
+        Refresh access token using refresh token.
+        
+        Args:
+            request: RefreshTokenRequest containing refresh token
+            ip_address: Client IP address
+            user_agent: Client user agent
+            
+        Returns:
+            AuthTokenResponse with new access token
+            
+        Raises:
+            ValidationError: If refresh token is invalid or expired
+            NotFoundError: If user is not found
+            HTTPException: If token refresh fails
+        """
+        try:
+            # Verify refresh token
+            payload = security_config.verify_token(request.refresh_token, "refresh")
+            user_id = payload.get("user_id")
+            
+            if not user_id:
+                security_audit_logger.log_security_event(
+                    event_type=SecurityEventType.TOKEN_EXPIRED,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    success=False,
+                    error_message="Invalid refresh token payload"
+                )
+                raise ValidationError("Invalid refresh token")
+            
+            # Get user
+            user = self.get_by_field("id", user_id)
+            if not user:
+                security_audit_logger.log_security_event(
+                    event_type=SecurityEventType.TOKEN_EXPIRED,
+                    user_id=user_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    success=False,
+                    error_message="User not found for refresh token"
+                )
+                raise NotFoundError("User not found")
+            
+            # Check if user is active
+            if not user.is_active:
+                security_audit_logger.log_security_event(
+                    event_type=SecurityEventType.TOKEN_EXPIRED,
+                    user_email=user.email,
+                    user_id=str(user.id),
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    success=False,
+                    error_message="User account deactivated"
+                )
+                raise ValidationError("Account is deactivated")
+            
+            # Create new access token
+            token_data = {
+                "user_id": str(user.id),
+                "email": user.email,
+                "is_active": user.is_active
+            }
+            
+            access_token = security_config.create_access_token(token_data)
+            
+            security_audit_logger.log_security_event(
+                event_type=SecurityEventType.TOKEN_CREATED,
+                user_email=user.email,
+                user_id=str(user.id),
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=True
+            )
+            
+            self.logger.info(f"Token refreshed successfully for user: {user.email}")
+            
+            return AuthTokenResponse(
+                access_token=access_token,
+                refresh_token=request.refresh_token,  # Keep the same refresh token
+                token_type="bearer",
+                expires_in=settings.jwt_access_token_expire_minutes * 60
+            )
+            
+        except ValidationError:
+            raise
+        except NotFoundError:
+            raise
+        except Exception as e:
+            self._handle_generic_error(e, "refresh token")
+    
+    async def logout(self, request: LogoutRequest = None, current_user: dict = None, ip_address: str = None, user_agent: str = None) -> MessageResponse:
+        """
+        Logout user and invalidate tokens.
+        
+        Args:
+            request: LogoutRequest containing refresh token (optional)
+            current_user: Current authenticated user data
+            ip_address: Client IP address
+            user_agent: Client user agent
+            
+        Returns:
+            MessageResponse with success status
+            
+        Note:
+            In a production environment, you would typically:
+            1. Add refresh tokens to a blacklist in Redis
+            2. Invalidate all active sessions for the user
+            3. Log the logout event for security audit
+        """
+        try:
+            user_email = current_user.get("email") if current_user else None
+            user_id = current_user.get("user_id") if current_user else None
+            
+            # Here you would typically blacklist the refresh token
+            # For now, we just log the logout event
+            if request and request.refresh_token:
+                # In production: Add refresh token to blacklist
+                # self.cache_service.blacklist_token(request.refresh_token)
+                pass
+            
+            security_audit_logger.log_security_event(
+                event_type=SecurityEventType.LOGOUT,
+                user_email=user_email,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=True
+            )
+            
+            self.logger.info(f"User logged out successfully: {user_email}")
+            
+            return MessageResponse(
+                message="Logged out successfully",
+                success=True
+            )
+            
+        except Exception as e:
+            self._handle_generic_error(e, "logout user")

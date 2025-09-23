@@ -25,6 +25,7 @@ class RateLimiter:
             "otp_send": {"max_attempts": 3, "window": 300},  # 3 attempts per 5 minutes
             "otp_verify": {"max_attempts": 5, "window": 900},  # 5 attempts per 15 minutes
             "password_change": {"max_attempts": 3, "window": 1800},  # 3 attempts per 30 minutes
+            "refresh": {"max_attempts": 10, "window": 300},  # 10 attempts per 5 minutes
         }
     
     def _get_key(self, endpoint: str, identifier: str) -> str:
@@ -214,36 +215,52 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-def rate_limit(endpoint: str, identifier_func=None):
+def rate_limit(endpoint: str, identifier_key: str = "email"):
     """
     Decorator for rate limiting endpoints.
     
     Args:
         endpoint: Endpoint name for rate limiting config
-        identifier_func: Function to extract identifier from request
+        identifier_key: Key to extract from request body for identifier (default: "email")
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # Extract request and identifier
-            request = None
+            request_obj = None
             identifier = None
             
-            # Find request in args/kwargs
+            # Find FastAPI Request object
             for arg in args:
                 if isinstance(arg, Request):
-                    request = arg
+                    request_obj = arg
                     break
             
-            if request is None:
-                # Look in kwargs
-                request = kwargs.get('request')
+            # Look for request object in kwargs
+            if request_obj is None:
+                for key, value in kwargs.items():
+                    if isinstance(value, Request):
+                        request_obj = value
+                        break
             
-            if identifier_func:
-                identifier = identifier_func(*args, **kwargs)
+            # Extract identifier from request body
+            if request_obj and hasattr(request_obj, 'json'):
+                try:
+                    # Find the request body parameter
+                    request_body = None
+                    for arg in args:
+                        if hasattr(arg, identifier_key):
+                            identifier = getattr(arg, identifier_key).lower().strip()
+                            break
+                    
+                    # If not found in args, default to IP
+                    if not identifier:
+                        identifier = get_client_identifier(request_obj) if request_obj else "unknown"
+                        
+                except Exception:
+                    identifier = get_client_identifier(request_obj) if request_obj else "unknown"
             else:
-                # Default to client IP
-                identifier = request.client.host if request else "unknown"
+                identifier = "unknown"
             
             # Check rate limit
             allowed, retry_after = rate_limiter.check_rate_limit(endpoint, identifier)

@@ -135,3 +135,15 @@ class TimezoneResponse(BaseModel):
     utc_offset: str = Field(..., description="UTC offset for the timezone")
 
 
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request schema."""
+    
+    refresh_token: str = Field(..., description="Valid refresh token")
+
+
+class LogoutRequest(BaseModel):
+    """Logout request schema."""
+    
+    refresh_token: Optional[str] = Field(None, description="Refresh token to invalidate")
+
+

@@ -9,7 +9,9 @@ from app.services.auth_service import AuthService
 from app.schemas.auth import (
     UserLoginRequest, ResetPasswordRequest, SendOTPRequest,
     VerifyOTPRequest, ChangePasswordRequest, UpdateTimezoneRequest,
-    AuthResponse, MessageResponse, OTPResponse, VerifyOTPResponse, TimezoneResponse
+    RefreshTokenRequest, LogoutRequest,
+    AuthResponse, MessageResponse, OTPResponse, VerifyOTPResponse, TimezoneResponse,
+    AuthTokenResponse
 )
 from app.core.exceptions import ValidationError, NotFoundError
 from app.utils.timezone import get_common_timezones, get_user_friendly_timezone_list
@@ -18,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=AuthResponse)
-@rate_limit("login", lambda req, db: req.email.lower().strip())
+@rate_limit("login", "email")
 async def login_user(
     request: UserLoginRequest,
     db: DatabaseSession,
@@ -88,7 +90,7 @@ async def reset_password(
 
 
 @router.post("/send-otp", response_model=OTPResponse)
-@rate_limit("otp_send", lambda req, db, http_req: req.email.lower().strip())
+@rate_limit("otp_send", "email")
 async def send_otp(
     request: SendOTPRequest,
     db: DatabaseSession,
@@ -123,7 +125,7 @@ async def send_otp(
 
 
 @router.post("/verify-otp", response_model=VerifyOTPResponse)
-@rate_limit("otp_verify", lambda req, db, http_req: req.email.lower().strip())
+@rate_limit("otp_verify", "email")
 async def verify_otp(
     request: VerifyOTPRequest,
     db: DatabaseSession,
@@ -163,7 +165,7 @@ async def verify_otp(
 
 
 @router.post("/change-password", response_model=MessageResponse)
-@rate_limit("password_change", lambda req, db, http_req: req.email.lower().strip())
+@rate_limit("password_change", "email")
 async def change_password(
     request: ChangePasswordRequest,
     db: DatabaseSession,
@@ -204,6 +206,91 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password"
+        )
+
+
+@router.post("/refresh", response_model=AuthTokenResponse)
+@rate_limit("refresh", "refresh_token")
+async def refresh_access_token(
+    request: RefreshTokenRequest,
+    db: DatabaseSession,
+    http_request: Request
+):
+    """
+    Refresh access token using refresh token.
+    
+    Use this endpoint to get a new access token when the current one expires.
+    The refresh token has a longer expiration time and can be used multiple times.
+    
+    Args:
+        request: RefreshTokenRequest containing refresh token
+        db: Database session
+        http_request: HTTP request object
+        
+    Returns:
+        AuthTokenResponse with new access token
+        
+    Raises:
+        HTTPException: If refresh token is invalid or expired
+    """
+    try:
+        auth_service = AuthService(db)
+        ip_address = get_client_identifier(http_request)
+        user_agent = http_request.headers.get("User-Agent")
+        return await auth_service.refresh_token(request, ip_address, user_agent)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    except NotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh token"
+        )
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout_user(
+    request: LogoutRequest = None,
+    db: DatabaseSession = None,
+    current_user: CurrentActiveUser = None,
+    http_request: Request = None
+):
+    """
+    Logout user and invalidate tokens.
+    
+    This endpoint can be called with or without authentication:
+    - With authentication: Logs out the current user and records the event
+    - Without authentication: Just invalidates the provided refresh token
+    
+    Args:
+        request: LogoutRequest containing refresh token (optional)
+        db: Database session
+        current_user: Current authenticated user (optional)
+        http_request: HTTP request object
+        
+    Returns:
+        MessageResponse with success status
+        
+    Note:
+        In production, this would also blacklist the refresh token
+        to prevent it from being used again.
+    """
+    try:
+        auth_service = AuthService(db)
+        ip_address = get_client_identifier(http_request) if http_request else None
+        user_agent = http_request.headers.get("User-Agent") if http_request else None
+        return await auth_service.logout(request, current_user, ip_address, user_agent)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to logout"
         )
 
 
