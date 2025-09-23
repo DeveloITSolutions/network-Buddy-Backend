@@ -89,12 +89,14 @@ class AuthService(BaseService[User]):
             updated_at=user.updated_at.isoformat()
         )
     
-    async def send_otp(self, request: SendOTPRequest) -> OTPResponse:
+    async def send_otp(self, request: SendOTPRequest, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> OTPResponse:
         """
         Send OTP to user's email.
         
         Args:
             request: SendOTPRequest containing email address
+            ip_address: Client IP address for security logging
+            user_agent: Client user agent for security logging
             
         Returns:
             OTPResponse with success status and expiration time
@@ -124,6 +126,15 @@ class AuthService(BaseService[User]):
             
             self.logger.info(f"OTP sent successfully to {request.email}")
             
+            # Log successful OTP sending
+            security_audit_logger.log_security_event(
+                event_type=SecurityEventType.OTP_SEND_SUCCESS,
+                user_email=request.email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                additional_data={"details": "OTP sent successfully"}
+            )
+            
             return OTPResponse(
                 message="OTP sent successfully",
                 email=request.email,
@@ -135,12 +146,14 @@ class AuthService(BaseService[User]):
         except Exception as e:
             self._handle_generic_error(e, "send OTP")
     
-    async def verify_otp(self, request: VerifyOTPRequest) -> VerifyOTPResponse:
+    async def verify_otp(self, request: VerifyOTPRequest, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> VerifyOTPResponse:
         """
         Verify OTP and return token for password change.
         
         Args:
             request: VerifyOTPRequest containing email and OTP code
+            ip_address: Client IP address for security logging
+            user_agent: Client user agent for security logging
             
         Returns:
             VerifyOTPResponse with verification token and expiration time
@@ -155,10 +168,26 @@ class AuthService(BaseService[User]):
             
             if not stored_otp:
                 self.logger.warning(f"OTP verification failed for {request.email}: OTP not found or expired")
+                security_audit_logger.log_security_event(
+                    event_type=SecurityEventType.OTP_VERIFY_FAILURE,
+                    user_email=request.email,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    additional_data={"details": "OTP not found or expired"},
+                    success=False
+                )
                 raise ValidationError("OTP has expired or is invalid")
             
             if stored_otp != request.otp_code:
                 self.logger.warning(f"OTP verification failed for {request.email}: Invalid OTP code")
+                security_audit_logger.log_security_event(
+                    event_type=SecurityEventType.OTP_VERIFY_FAILURE,
+                    user_email=request.email,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    additional_data={"details": "Invalid OTP code"},
+                    success=False
+                )
                 raise ValidationError("Invalid OTP code")
             
             # Remove OTP from cache after successful verification
@@ -176,6 +205,15 @@ class AuthService(BaseService[User]):
                 )
             
             self.logger.info(f"OTP verified successfully for {request.email}")
+            
+            # Log successful OTP verification
+            security_audit_logger.log_security_event(
+                event_type=SecurityEventType.OTP_VERIFY_SUCCESS,
+                user_email=request.email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                additional_data={"details": "OTP verified successfully"}
+            )
             
             return VerifyOTPResponse(
                 message="OTP verified successfully",
@@ -319,12 +357,14 @@ class AuthService(BaseService[User]):
         except Exception as e:
             self._handle_generic_error(e, "process password reset")
     
-    async def change_password(self, request: ChangePasswordRequest) -> MessageResponse:
+    async def change_password(self, request: ChangePasswordRequest, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> MessageResponse:
         """
         Change password using verification token.
         
         Args:
             request: ChangePasswordRequest containing email, new password, and token
+            ip_address: Client IP address for security logging
+            user_agent: Client user agent for security logging
             
         Returns:
             MessageResponse with success status
@@ -366,6 +406,15 @@ class AuthService(BaseService[User]):
             self.cache_service.delete_verification_token(request.email)
             
             self.logger.info(f"Password changed successfully for: {user.email}")
+            
+            # Log successful password change
+            security_audit_logger.log_security_event(
+                event_type=SecurityEventType.PASSWORD_CHANGE_SUCCESS,
+                user_email=user.email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                additional_data={"details": "Password changed successfully"}
+            )
             
             return MessageResponse(
                 message="Password changed successfully",
