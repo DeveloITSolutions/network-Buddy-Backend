@@ -255,6 +255,9 @@ class PlugListResponse(BaseModel):
     pages: int
     has_next: bool
     has_prev: bool
+    
+    # Count information for targets and contacts
+    counts: Dict[str, int] = Field(..., description="Count of plugs by type")
 
 
 class PlugFilters(BaseModel):

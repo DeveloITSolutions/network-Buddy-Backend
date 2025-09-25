@@ -140,6 +140,10 @@ async def list_plugs(
             plugs = [plug for plug in plugs if getattr(plug, 'status', None) == status]
             total = len(plugs)  # Update total after filtering
         
+        # Calculate counts for targets and contacts
+        target_count = sum(1 for plug in plugs if plug.plug_type.value == 'target')
+        contact_count = sum(1 for plug in plugs if plug.plug_type.value == 'contact')
+        
         # Calculate pagination info
         pages = (total + limit - 1) // limit
         current_page = skip // limit + 1
@@ -151,7 +155,11 @@ async def list_plugs(
             per_page=limit,
             pages=pages,
             has_next=current_page < pages,
-            has_prev=current_page > 1
+            has_prev=current_page > 1,
+            counts={
+                "targets": target_count,
+                "contacts": contact_count
+            }
         )
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -206,6 +214,10 @@ async def search_plugs(
             plugs = [plug for plug in plugs if getattr(plug, 'status', None) == status]
             total = len(plugs)  # Update total after filtering
         
+        # Calculate counts for targets and contacts
+        target_count = sum(1 for plug in plugs if plug.plug_type.value == 'target')
+        contact_count = sum(1 for plug in plugs if plug.plug_type.value == 'contact')
+        
         # Calculate pagination info
         pages = (total + limit - 1) // limit
         current_page = skip // limit + 1
@@ -217,7 +229,11 @@ async def search_plugs(
             per_page=limit,
             pages=pages,
             has_next=current_page < pages,
-            has_prev=current_page > 1
+            has_prev=current_page > 1,
+            counts={
+                "targets": target_count,
+                "contacts": contact_count
+            }
         )
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
