@@ -211,6 +211,15 @@ class EventMediaResponse(EventMediaBase):
     created_at: datetime
     updated_at: datetime
     
+    @validator('tags', pre=True)
+    def parse_tags(cls, v):
+        """Parse tags from comma-separated string to list."""
+        if isinstance(v, str):
+            if not v.strip():
+                return []
+            return [tag.strip() for tag in v.split(",") if tag.strip()]
+        return v
+    
     class Config:
         from_attributes = True
 

@@ -514,6 +514,11 @@ class EventService(BaseService[Event]):
             media_dict = media_data.model_dump(exclude_unset=True)
             media_dict["event_id"] = event_id
             
+            # Convert tags list to comma-separated string for database storage
+            if 'tags' in media_dict and media_dict['tags'] is not None:
+                if isinstance(media_dict['tags'], list):
+                    media_dict['tags'] = ','.join(media_dict['tags'])
+            
             # Create media
             media = await self.media_repo.create(media_dict)
             
@@ -568,6 +573,83 @@ class EventService(BaseService[Event]):
                 "Failed to get event media",
                 error_code="EVENT_MEDIA_RETRIEVAL_FAILED",
                 details={"event_id": str(event_id), "error": str(e)}
+            )
+
+    async def get_event_media_item(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        media_id: UUID
+    ) -> Optional[EventMedia]:
+        """
+        Get a specific media item for an event.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            media_id: Media ID
+            
+        Returns:
+            Media item if found and owned by user, None otherwise
+        """
+        try:
+            # Verify event ownership
+            event = await self._verify_user_event_ownership(user_id, event_id)
+            if not event:
+                raise NotFoundError("Event not found")
+            
+            # Get media item
+            media = await self.media_repo.get(media_id)
+            if media and media.event_id != event_id:
+                return None
+                
+            return media
+            
+        except Exception as e:
+            logger.error(f"Error getting media item {media_id} for event {event_id}: {e}")
+            raise BusinessLogicError(
+                "Failed to get media item",
+                error_code="MEDIA_ITEM_RETRIEVAL_FAILED",
+                details={"event_id": str(event_id), "media_id": str(media_id), "error": str(e)}
+            )
+
+    async def delete_media(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        media_id: UUID
+    ) -> bool:
+        """
+        Delete a media item from an event.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            media_id: Media ID
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        try:
+            # Verify event ownership
+            event = await self._verify_user_event_ownership(user_id, event_id)
+            if not event:
+                raise NotFoundError("Event not found")
+            
+            # Get media item to verify it belongs to the event
+            media = await self.media_repo.get(media_id)
+            if not media or media.event_id != event_id:
+                return False
+            
+            # Delete media
+            return await self.media_repo.delete(media_id, soft=True)
+            
+        except Exception as e:
+            logger.error(f"Error deleting media {media_id} from event {event_id}: {e}")
+            raise BusinessLogicError(
+                "Failed to delete media",
+                error_code="MEDIA_DELETION_FAILED",
+                details={"event_id": str(event_id), "media_id": str(media_id), "error": str(e)}
             )
 
     # Event-Plug Operations

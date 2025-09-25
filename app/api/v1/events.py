@@ -4,7 +4,8 @@ API endpoints for event management.
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile, Form
+from fastapi.responses import FileResponse
 
 from app.core.dependencies import DatabaseSession, CurrentActiveUser
 from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
@@ -16,6 +17,7 @@ from app.schemas.event import (
     EventPlugCreate, EventPlugResponse, EventFilters
 )
 from app.services.event_service import EventService
+from app.services.file_upload_service import FileUploadService
 
 router = APIRouter(tags=["Events"])
 
@@ -23,6 +25,11 @@ router = APIRouter(tags=["Events"])
 def get_event_service(db: DatabaseSession) -> EventService:
     """Dependency to get event service instance."""
     return EventService(db)
+
+
+def get_file_upload_service(db: DatabaseSession) -> FileUploadService:
+    """Dependency to get file upload service instance."""
+    return FileUploadService(db)
 
 
 # Event Management Endpoints
@@ -336,15 +343,74 @@ async def get_event_expenses(
 @router.post("/{event_id}/media", response_model=EventMediaResponse, status_code=status.HTTP_201_CREATED)
 async def create_media(
     event_id: UUID,
+    current_user: CurrentActiveUser,
+    file: UploadFile = File(..., description="Media file to upload"),
+    title: Optional[str] = Form(None, description="Media title"),
+    description: Optional[str] = Form(None, description="Media description"),
+    tags: Optional[str] = Form(None, description="Comma-separated tags"),
+    service: EventService = Depends(get_event_service),
+    upload_service: FileUploadService = Depends(get_file_upload_service)
+):
+    """
+    Create a new media item for an event with file upload.
+    
+    - Requires JWT authentication
+    - User can only add media to their own events
+    - Accepts multipart/form-data for file uploads
+    - Supports images, videos, documents, and audio files
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Upload file and get file information
+        file_url, file_type, file_size, original_filename = await upload_service.upload_file(
+            file=file,
+            user_id=user_id,
+            event_id=event_id,
+            subdirectory="events"
+        )
+        
+        # Parse tags
+        tag_list = []
+        if tags:
+            tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+        
+        # Create media data
+        media_data = EventMediaCreate(
+            title=title or original_filename,
+            description=description,
+            file_url=file_url,
+            file_type=file_type,
+            file_size=file_size,
+            tags=tag_list if tag_list else None
+        )
+        
+        # Create media through service
+        media = await service.create_media(user_id, event_id, media_data)
+        
+        return EventMediaResponse.model_validate(media)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/{event_id}/media/json", response_model=EventMediaResponse, status_code=status.HTTP_201_CREATED)
+async def create_media_json(
+    event_id: UUID,
     media_data: EventMediaCreate,
     current_user: CurrentActiveUser,
     service: EventService = Depends(get_event_service)
 ):
     """
-    Create a new media item for an event.
+    Create a new media item for an event using JSON (for URLs).
     
     - Requires JWT authentication
     - User can only add media to their own events
+    - Use this endpoint when you have a file URL (e.g., from external storage)
     """
     try:
         # Extract user_id from JWT token
@@ -389,6 +455,82 @@ async def get_event_media(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{event_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_media(
+    event_id: UUID,
+    media_id: UUID,
+    current_user: CurrentActiveUser,
+    service: EventService = Depends(get_event_service),
+    upload_service: FileUploadService = Depends(get_file_upload_service)
+):
+    """
+    Delete a media item from an event.
+    
+    - Requires JWT authentication
+    - User can only delete media from their own events
+    - Also removes the file from storage
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Get media item first to get file URL
+        media = await service.get_event_media_item(user_id, event_id, media_id)
+        if not media:
+            raise NotFoundError("Media not found")
+        
+        # Delete file from storage
+        if media.file_url:
+            await upload_service.delete_file(media.file_url)
+        
+        # Delete media record
+        deleted = await service.delete_media(user_id, event_id, media_id)
+        if not deleted:
+            raise NotFoundError("Media not found")
+            
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.get("/media/{file_path:path}")
+async def serve_media_file(
+    file_path: str,
+    current_user: CurrentActiveUser,
+    upload_service: FileUploadService = Depends(get_file_upload_service)
+):
+    """
+    Serve uploaded media files.
+    
+    - Requires JWT authentication
+    - Serves files from the uploads directory
+    """
+    try:
+        # Construct full file path
+        full_path = f"uploads/{file_path}"
+        
+        # Get file info
+        file_info = upload_service.get_file_info(f"/{full_path}")
+        if not file_info or not file_info.get("exists"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        
+        # Return file response
+        return FileResponse(
+            path=file_info["path"],
+            media_type="application/octet-stream",
+            filename=file_path.split("/")[-1]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving file {file_path}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to serve file")
 
 
 # Event-Plug Association Endpoints
