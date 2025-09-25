@@ -2,7 +2,7 @@
 Authentication schemas for request/response validation.
 """
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -34,7 +34,8 @@ class VerifyOTPRequest(BaseModel):
     email: EmailStr = Field(..., description="User email address")
     otp_code: str = Field(..., min_length=6, max_length=6, description="6-digit OTP code")
     
-    @validator('otp_code')
+    @field_validator('otp_code')
+    @classmethod
     def validate_otp_format(cls, v):
         """Validate OTP is 6 digits."""
         if not re.match(r'^\d{6}$', v):
@@ -49,7 +50,8 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128, description="New password")
     token: str = Field(..., description="Verification token from OTP verification")
     
-    @validator('new_password')
+    @field_validator('new_password')
+    @classmethod
     def validate_password_strength(cls, v):
         """Validate new password meets security requirements."""
         try:
@@ -118,7 +120,8 @@ class UpdateTimezoneRequest(BaseModel):
     
     timezone: str = Field(..., description="IANA timezone identifier (e.g., 'America/New_York', 'Europe/London')")
     
-    @validator('timezone')
+    @field_validator('timezone')
+    @classmethod
     def validate_timezone(cls, v):
         """Validate timezone is a valid IANA timezone identifier."""
         if v not in available_timezones():

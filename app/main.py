@@ -292,10 +292,21 @@ def configure_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         """Handle request validation errors."""
+        # Convert errors to JSON-serializable format
+        serializable_errors = []
+        for error in exc.errors():
+            serializable_error = {
+                "type": error.get("type", "validation_error"),
+                "loc": error.get("loc", []),
+                "msg": str(error.get("msg", "Validation error")),
+                "input": error.get("input")
+            }
+            serializable_errors.append(serializable_error)
+        
         logger.warning(
             f"Validation error: {str(exc)}",
             extra={
-                "errors": exc.errors(),
+                "errors": serializable_errors,
                 "url": str(request.url),
                 "method": request.method,
                 "correlation_id": get_correlation_id()
@@ -308,7 +319,31 @@ def configure_exception_handlers(app: FastAPI) -> None:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "Request validation failed",
-                    "details": exc.errors(),
+                    "details": serializable_errors,
+                    "timestamp": time.time(),
+                    "correlation_id": get_correlation_id()
+                }
+            }
+        )
+    
+    @app.exception_handler(ValueError)
+    async def value_error_handler(request: Request, exc: ValueError):
+        """Handle ValueError exceptions (e.g., from Pydantic validators)."""
+        logger.warning(
+            f"Value error: {str(exc)}",
+            extra={
+                "url": str(request.url),
+                "method": request.method,
+                "correlation_id": get_correlation_id()
+            }
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": str(exc),
                     "timestamp": time.time(),
                     "correlation_id": get_correlation_id()
                 }
