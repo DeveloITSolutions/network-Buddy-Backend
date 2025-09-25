@@ -103,43 +103,29 @@ async def delete_plug(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{plug_id}", response_model=PlugResponse)
-async def get_plug(
-    plug_id: UUID,
-    current_user: CurrentActiveUser,
-    service: PlugService = Depends(get_plug_service)
-):
-    """
-    Get a specific plug (target or contact) by ID.
-    
-    - Requires JWT authentication
-    - User can only access their own plugs
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        plug = await service.get_user_plug(user_id, plug_id)
-        
-        if not plug:
-            raise NotFoundError("Plug not found")
-        
-        return PlugResponse.model_validate(plug)
-    except ValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-
 @router.get("/", response_model=PlugListResponse)
 async def list_plugs(
     current_user: CurrentActiveUser,
+    # Filter parameters
+    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    status: Optional[str] = Query(None, description="Filter by status (new_client, existing_client, new_partnership)"),
+    # Pagination parameters
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
-    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    # Service dependency
     service: PlugService = Depends(get_plug_service)
 ):
     """
-    Get paginated list of all plugs (targets and contacts) for authenticated user.
+    Get paginated list of plugs with optional filtering.
+    
+    This endpoint provides the same filtering capabilities as the search endpoint
+    but without text search functionality.
+    
+    Examples:
+    - All plugs: GET /
+    - All contacts: ?plug_type=contact
+    - New clients: ?plug_type=contact&status=new_client
+    - All targets: ?plug_type=target
     
     - Requires JWT authentication
     - Returns only the user's own plugs
@@ -148,6 +134,11 @@ async def list_plugs(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         plugs, total = await service.get_user_plugs(user_id, plug_type, skip, limit)
+        
+        # Apply status filter if provided
+        if status:
+            plugs = [plug for plug in plugs if getattr(plug, 'status', None) == status]
+            total = len(plugs)  # Update total after filtering
         
         # Calculate pagination info
         pages = (total + limit - 1) // limit
@@ -171,14 +162,31 @@ async def list_plugs(
 @router.get("/search", response_model=PlugListResponse)
 async def search_plugs(
     current_user: CurrentActiveUser,
-    q: str = Query(..., min_length=1, description="Search query"),
+    # Search parameters
+    q: Optional[str] = Query(None, min_length=1, description="Search query (name, company, email)"),
+    # Filter parameters
+    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    status: Optional[str] = Query(None, description="Filter by status (new_client, existing_client, new_partnership)"),
+    # Pagination parameters
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
-    plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    # Service dependency
     service: PlugService = Depends(get_plug_service)
 ):
     """
-    Search plugs by name, company, or email for authenticated user.
+    Universal search and filter endpoint for plugs.
+    
+    This single endpoint handles all search and filtering needs:
+    - Text search across name, company, email
+    - Filter by plug type (target/contact)
+    - Filter by status (new_client, existing_client, new_partnership)
+    - Pagination support
+    
+    Examples:
+    - Search contacts: ?q=john&plug_type=contact
+    - Filter new clients: ?plug_type=contact&status=new_client
+    - Search targets: ?q=company&plug_type=target
+    - All plugs: ?plug_type=all (or no filters)
     
     - Requires JWT authentication
     - Searches only the user's own plugs
@@ -186,7 +194,17 @@ async def search_plugs(
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        plugs, total = await service.search_user_plugs(user_id, q, plug_type, skip, limit)
+        
+        # If no search query provided, use the list method instead
+        if not q:
+            plugs, total = await service.get_user_plugs(user_id, plug_type, skip, limit)
+        else:
+            plugs, total = await service.search_user_plugs(user_id, q, plug_type, skip, limit)
+        
+        # Apply status filter if provided
+        if status:
+            plugs = [plug for plug in plugs if getattr(plug, 'status', None) == status]
+            total = len(plugs)  # Update total after filtering
         
         # Calculate pagination info
         pages = (total + limit - 1) // limit
@@ -225,6 +243,35 @@ async def get_plug_stats(
         return stats
     except BusinessLogicError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+
+
+@router.get("/{plug_id}", response_model=PlugResponse)
+async def get_plug(
+    plug_id: UUID,
+    current_user: CurrentActiveUser,
+    service: PlugService = Depends(get_plug_service)
+):
+    """
+    Get a specific plug (target or contact) by ID.
+    
+    - Requires JWT authentication
+    - User can only access their own plugs
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        plug = await service.get_user_plug(user_id, plug_id)
+        
+        if not plug:
+            raise NotFoundError("Plug not found")
+        
+        return PlugResponse.model_validate(plug)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 # Target to Contact Conversion
