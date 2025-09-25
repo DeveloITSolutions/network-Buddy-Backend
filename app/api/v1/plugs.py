@@ -1,18 +1,14 @@
 """
 API endpoints for plug (target/contact) management.
 """
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.dependencies import DatabaseSession, CurrentActiveUser
 from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
-from app.schemas.plug import (
-    TargetCreate, TargetUpdate, ContactCreate, ContactUpdate,
-    TargetToContactConversion, PlugResponse, PlugListResponse,
-    PlugFilters, PlugStats
-)
+from app.schemas.plug import PlugResponse, PlugListResponse, PlugStats
 from app.services.plug_service import PlugService
 
 router = APIRouter(tags=["Plugs"])
@@ -23,7 +19,7 @@ def get_plug_service(db: DatabaseSession) -> PlugService:
     return PlugService(db)
 
 
-# Plug Management Endpoints (Unified for targets and contacts)
+# Plug Management Endpoints
 @router.post("/", response_model=PlugResponse, status_code=status.HTTP_201_CREATED)
 async def create_plug(
     plug_data: dict,  # Accept raw JSON to handle all fields
@@ -34,26 +30,14 @@ async def create_plug(
     Create a new plug (target or contact).
     
     - Requires JWT authentication
-    - If minimal data provided: Creates a TARGET
-    - If complete data provided: Creates a CONTACT
     - Business logic automatically determines the type based on data completeness
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Extract basic fields to check data completeness
-        has_contact_info = bool(plug_data.get('email') or plug_data.get('primary_number'))
-        has_business_info = bool(plug_data.get('company') and plug_data.get('job_title'))
-        
-        if has_contact_info and has_business_info:
-            # Create as contact - validate with ContactCreate schema
-            contact_data = ContactCreate(**plug_data)
-            plug = await service.create_contact(user_id, contact_data)
-        else:
-            # Create as target - validate with TargetCreate schema
-            target_data = TargetCreate(**plug_data)
-            plug = await service.create_target(user_id, target_data)
+        # Create plug through service
+        plug = await service.create_plug(user_id, plug_data)
         
         return PlugResponse.model_validate(plug)
     except ValidationError as e:
@@ -79,17 +63,11 @@ async def update_plug(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Get the plug to determine its type
-        existing_plug = await service.get_user_plug(user_id, plug_id)
+        # Update plug through service
+        plug = await service.update_plug(user_id, plug_id, plug_data)
         
-        if existing_plug.plug_type.value == "contact":
-            # Update as contact
-            update_data = ContactUpdate(**plug_data)
-            plug = await service.update_contact(user_id, plug_id, update_data)
-        else:
-            # Update as target
-            update_data = TargetUpdate(**plug_data)
-            plug = await service.update_target(user_id, plug_id, update_data)
+        if not plug:
+            raise NotFoundError("Plug not found")
         
         return PlugResponse.model_validate(plug)
     except ValidationError as e:
@@ -115,7 +93,10 @@ async def delete_plug(
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        await service.delete_plug(user_id, plug_id)
+        
+        deleted = await service.delete_plug(user_id, plug_id)
+        if not deleted:
+            raise NotFoundError("Plug not found")
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except NotFoundError as e:
@@ -138,6 +119,10 @@ async def get_plug(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         plug = await service.get_user_plug(user_id, plug_id)
+        
+        if not plug:
+            raise NotFoundError("Plug not found")
+        
         return PlugResponse.model_validate(plug)
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -162,8 +147,7 @@ async def list_plugs(
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        filters = PlugFilters(plug_type=plug_type) if plug_type else None
-        plugs, total = await service.get_user_plugs(user_id, filters, skip, limit)
+        plugs, total = await service.get_user_plugs(user_id, plug_type, skip, limit)
         
         # Calculate pagination info
         pages = (total + limit - 1) // limit
@@ -202,8 +186,7 @@ async def search_plugs(
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        filters = PlugFilters(plug_type=plug_type) if plug_type else None
-        plugs, total = await service.search_user_plugs(user_id, q, filters, skip, limit)
+        plugs, total = await service.search_user_plugs(user_id, q, plug_type, skip, limit)
         
         # Calculate pagination info
         pages = (total + limit - 1) // limit
@@ -244,11 +227,11 @@ async def get_plug_stats(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-# Target to Contact Conversion (Special endpoint)
+# Target to Contact Conversion
 @router.post("/{target_id}/convert", response_model=PlugResponse)
 async def convert_target_to_contact(
     target_id: UUID,
-    conversion_data: TargetToContactConversion,
+    conversion_data: dict,  # Accept raw JSON for flexible conversion data
     current_user: CurrentActiveUser,
     service: PlugService = Depends(get_plug_service)
 ):
@@ -262,6 +245,10 @@ async def convert_target_to_contact(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         plug = await service.convert_target_to_contact(user_id, target_id, conversion_data)
+        
+        if not plug:
+            raise NotFoundError("Target not found")
+        
         return PlugResponse.model_validate(plug)
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

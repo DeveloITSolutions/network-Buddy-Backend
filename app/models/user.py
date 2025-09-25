@@ -9,6 +9,7 @@ from .base import BaseModel
 
 if TYPE_CHECKING:
     from .plug import Plug
+    from .event import Event
 
 
 class User(BaseModel):
@@ -85,6 +86,13 @@ class User(BaseModel):
         back_populates="user",
         cascade="all, delete-orphan",
         doc="User's plugs (targets and contacts)"
+    )
+    
+    events: Mapped[List["Event"]] = relationship(
+        "Event",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        doc="User's events"
     )
     
     @property

@@ -18,6 +18,7 @@ from .mixins import (
 )
 from .user import User
 from .plug import Plug, PlugType, NetworkType, BusinessType, Priority
+from .event import Event, EventAgenda, EventExpense, EventMedia, EventPlug
 
 __all__ = [
     # Base model
@@ -36,6 +37,11 @@ __all__ = [
     # Models
     "User",
     "Plug",
+    "Event",
+    "EventAgenda",
+    "EventExpense",
+    "EventMedia",
+    "EventPlug",
     # Enums
     "PlugType",
     "NetworkType", 

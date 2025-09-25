@@ -1,0 +1,1081 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"name": "The Plugs API - Complete Collection",
+		"description": "Complete API collection for The Plugs Backend - Authentication, Plugs Management, and Events Module",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"testpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"test@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/send-otp",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "send-otp"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"test@example.com\",\n  \"otp_code\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/verify-otp",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "verify-otp"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"test@example.com\",\n  \"new_password\": \"newpassword123\",\n  \"token\": \"verification_token_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/change-password",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "change-password"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/refresh",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "refresh"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/logout",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "logout"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "users", "me"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Timezone",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"timezone\": \"America/New_York\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/timezone",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "timezone"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Available Timezones",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/timezones",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "timezones"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Plugs Management",
+			"item": [
+				{
+					"name": "Create Plug",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"job_title\": \"Software Engineer\",\n  \"company\": \"Tech Corp\",\n  \"email\": \"john.doe@techcorp.com\",\n  \"primary_number\": \"+1234567890\",\n  \"linkedin_url\": \"https://linkedin.com/in/johndoe\",\n  \"notes\": \"Met at conference\",\n  \"network_type\": \"professional\",\n  \"business_type\": \"technology\",\n  \"connect_reason\": \"Potential collaboration\",\n  \"tags\": [\"tech\", \"engineer\", \"conference\"],\n  \"priority\": \"high\",\n  \"custom_data\": {\n    \"source\": \"conference\",\n    \"interest_level\": \"high\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List All Plugs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/?skip=0&limit=10&plug_type=contact",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", ""],
+							"query": [
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "plug_type",
+									"value": "contact"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Plug",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/{{plug_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "{{plug_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Plug",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe Updated\",\n  \"job_title\": \"Senior Software Engineer\",\n  \"company\": \"Tech Corp Inc\",\n  \"priority\": \"urgent\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/{{plug_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "{{plug_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Search Plugs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/search?q=john&skip=0&limit=10&plug_type=contact",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "search"],
+							"query": [
+								{
+									"key": "q",
+									"value": "john"
+								},
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "plug_type",
+									"value": "contact"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Plug Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "stats"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Convert Target to Contact",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john.doe@techcorp.com\",\n  \"primary_number\": \"+1234567890\",\n  \"linkedin_url\": \"https://linkedin.com/in/johndoe\",\n  \"notes\": \"Converted from target to contact\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/{{target_id}}/convert",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "{{target_id}}", "convert"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Plug",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/plugs/{{plug_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "plugs", "{{plug_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Events Management",
+			"item": [
+				{
+					"name": "Create Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Hair Health Summit 2025\",\n  \"theme\": \"Hair Restoration\",\n  \"description\": \"Annual conference on hair health innovations and treatments\",\n  \"start_date\": \"2025-08-15T09:00:00Z\",\n  \"end_date\": \"2025-08-17T18:00:00Z\",\n  \"location_name\": \"The Gwen Hotel\",\n  \"location_address\": \"521 North Rush Street Chicago, IL 60611\",\n  \"city\": \"Chicago\",\n  \"state\": \"IL\",\n  \"country\": \"USA\",\n  \"postal_code\": \"60611\",\n  \"website_url\": \"https://hairtechconference2025.com\",\n  \"cover_image_url\": \"https://example.com/cover.jpg\",\n  \"is_public\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List All Events",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/?skip=0&limit=10&search=summit&city=Chicago",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", ""],
+							"query": [
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "search",
+									"value": "summit"
+								},
+								{
+									"key": "city",
+									"value": "Chicago"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Event",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Event",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Hair Health Summit 2025\",\n  \"theme\": \"Advanced Hair Restoration\",\n  \"description\": \"Updated description\",\n  \"is_public\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Event",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Event Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "stats"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Deeds Module - Agenda",
+			"item": [
+				{
+					"name": "Create Agenda Item",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Opening Keynote: Future of Hair Restoration\",\n  \"description\": \"Welcome address and keynote presentation on latest hair restoration technologies\",\n  \"location\": \"Main Hall - Auditorium A\",\n  \"day\": 1,\n  \"start_time\": \"2025-08-15T09:00:00Z\",\n  \"duration_minutes\": 60\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/agenda",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "agenda"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Event Agenda",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/agenda?day=1&skip=0&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "agenda"],
+							"query": [
+								{
+									"key": "day",
+									"value": "1"
+								},
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Agenda Item",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Opening Keynote\",\n  \"description\": \"Updated description\",\n  \"duration_minutes\": 90\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/agenda/{{agenda_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "agenda", "{{agenda_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Agenda Item",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/agenda/{{agenda_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "agenda", "{{agenda_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Deeds Module - Expenses",
+			"item": [
+				{
+					"name": "Create Expense",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"category\": \"Event Signup\",\n  \"description\": \"Conference registration fee\",\n  \"amount\": 1299.00,\n  \"currency\": \"USD\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/expenses",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "expenses"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Event Expenses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/expenses?category=Event Signup&skip=0&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "expenses"],
+							"query": [
+								{
+									"key": "category",
+									"value": "Event Signup"
+								},
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Expense",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 1399.00,\n  \"description\": \"Updated registration fee\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/expenses/{{expense_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "expenses", "{{expense_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Expense",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/expenses/{{expense_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "expenses", "{{expense_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Zone Module - Media",
+			"item": [
+				{
+					"name": "Create Media",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Keynote Session Photo\",\n  \"description\": \"Photo from the opening keynote session\",\n  \"file_url\": \"https://example.com/photos/keynote.jpg\",\n  \"file_type\": \"image/jpeg\",\n  \"file_size\": 2048576,\n  \"tags\": [\"keynote\", \"main stage\", \"opening\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/media",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "media"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Event Media",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/media?file_type=image/jpeg&skip=0&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "media"],
+							"query": [
+								{
+									"key": "file_type",
+									"value": "image/jpeg"
+								},
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Media",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Keynote Photo\",\n  \"description\": \"Updated description\",\n  \"tags\": [\"keynote\", \"updated\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/media/{{media_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "media", "{{media_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Media",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/media/{{media_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "media", "{{media_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Plugs Module - Event Associations",
+			"item": [
+				{
+					"name": "Add Plug to Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"plug_id\": \"{{plug_id}}\",\n  \"notes\": \"Met during keynote session, interested in collaboration\",\n  \"priority\": \"high\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/plugs",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "plugs"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Event Plugs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/plugs?plug_type=contact&skip=0&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "plugs"],
+							"query": [
+								{
+									"key": "plug_type",
+									"value": "contact"
+								},
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Remove Plug from Event",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/events/{{event_id}}/plugs/{{plug_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "events", "{{event_id}}", "plugs", "{{plug_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health & Utility",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "API Health",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "health"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Database Health",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/v1/health/database",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "health", "database"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Redis Health",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/api/v1/health/redis",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "health", "redis"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "event_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "plug_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "target_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "agenda_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "expense_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "media_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

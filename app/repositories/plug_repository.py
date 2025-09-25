@@ -3,14 +3,14 @@ Repository for plug (target/contact) operations.
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import and_, desc, func, or_, text
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import DatabaseError, NotFoundError, ValidationError
-from app.models.plug import Plug, PlugType, NetworkType, BusinessType, Priority
+from app.core.exceptions import DatabaseError, ValidationError
+from app.models.plug import Plug, PlugType, NetworkType, Priority
 from app.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -31,101 +31,42 @@ class PlugRepository(BaseRepository[Plug]):
         """Initialize plug repository."""
         super().__init__(db, Plug)
 
-    # Specialized Creation Methods
-    async def create_target(self, user_id: UUID, target_data: Dict[str, Any]) -> Plug:
+    # Creation Methods
+    async def create_plug(self, user_id: UUID, plug_data: Dict[str, Any]) -> Plug:
         """
-        Create a new target plug.
+        Create a new plug (target or contact).
         
         Args:
             user_id: Owner user ID
-            target_data: Target data dictionary
+            plug_data: Plug data dictionary
             
         Returns:
-            Created target plug
+            Created plug
             
         Raises:
-            ValidationError: If target data is invalid
+            ValidationError: If plug data is invalid
             DatabaseError: If creation fails
         """
         try:
-            # Ensure target type and user association
-            target_data.update({
-                "user_id": user_id,
-                "plug_type": PlugType.TARGET,
-                "is_contact": False
-            })
+            # Ensure user association
+            plug_data.update({"user_id": user_id})
             
-            # Validate minimum required fields for target
-            if not target_data.get("first_name") or not target_data.get("last_name"):
+            # Validate minimum required fields
+            if not plug_data.get("first_name") or not plug_data.get("last_name"):
                 raise ValidationError(
-                    "First name and last name are required for targets",
+                    "First name and last name are required",
                     error_code="MISSING_REQUIRED_FIELDS"
                 )
             
-            return await self.create(target_data)
+            return await self.create(plug_data)
             
         except ValidationError:
             raise
         except Exception as e:
-            logger.error(f"Error creating target for user {user_id}: {e}")
+            logger.error(f"Error creating plug for user {user_id}: {e}")
             raise DatabaseError(
-                "Failed to create target",
-                error_code="TARGET_CREATE_ERROR",
-                details={"user_id": str(user_id), "error": str(e)}
-            )
-
-    async def create_contact(self, user_id: UUID, contact_data: Dict[str, Any]) -> Plug:
-        """
-        Create a new contact plug.
-        
-        Args:
-            user_id: Owner user ID
-            contact_data: Contact data dictionary
-            
-        Returns:
-            Created contact plug
-            
-        Raises:
-            ValidationError: If contact data is invalid
-            DatabaseError: If creation fails
-        """
-        try:
-            # Ensure contact type and user association
-            contact_data.update({
-                "user_id": user_id,
-                "plug_type": PlugType.CONTACT,
-                "is_contact": True
-            })
-            
-            # Set default values for contact-specific fields
-            if "priority" not in contact_data:
-                contact_data["priority"] = Priority.MEDIUM
-            if "network_type" not in contact_data:
-                contact_data["network_type"] = NetworkType.NEW_CLIENT
-            
-            # Validate minimum required fields for contact
-            if not contact_data.get("first_name") or not contact_data.get("last_name"):
-                raise ValidationError(
-                    "First name and last name are required for contacts",
-                    error_code="MISSING_REQUIRED_FIELDS"
-                )
-            
-            # Validate that contact has some form of contact information
-            if not any([contact_data.get("email"), contact_data.get("primary_number")]):
-                raise ValidationError(
-                    "Contact must have either email or phone number",
-                    error_code="MISSING_CONTACT_INFO"
-                )
-            
-            return await self.create(contact_data)
-            
-        except ValidationError:
-            raise
-        except Exception as e:
-            logger.error(f"Error creating contact for user {user_id}: {e}")
-            raise DatabaseError(
-                "Failed to create contact",
-                error_code="CONTACT_CREATE_ERROR",
+                "Failed to create plug",
+                error_code="PLUG_CREATE_ERROR",
                 details={"user_id": str(user_id), "error": str(e)}
             )
 
@@ -203,9 +144,9 @@ class PlugRepository(BaseRepository[Plug]):
         skip: int = 0,
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None
-    ) -> List[Plug]:
+    ) -> Tuple[List[Plug], int]:
         """
-        Get all plugs for a specific user.
+        Get all plugs for a specific user with count.
         
         Args:
             user_id: User ID
@@ -215,7 +156,7 @@ class PlugRepository(BaseRepository[Plug]):
             filters: Additional filters
             
         Returns:
-            List of user's plugs
+            Tuple of (plugs list, total count)
         """
         try:
             # Build base filters
@@ -228,56 +169,24 @@ class PlugRepository(BaseRepository[Plug]):
             if filters:
                 base_filters.update(filters)
             
-            return await self.get_multi(
+            # Get plugs
+            plugs = await self.get_multi(
                 skip=skip,
                 limit=limit,
                 filters=base_filters,
                 order_by="-created_at"
             )
             
+            # Get total count
+            total_count = await self.count(filters=base_filters)
+            
+            return plugs, total_count
+            
         except Exception as e:
             logger.error(f"Error getting plugs for user {user_id}: {e}")
             raise DatabaseError(
                 "Failed to get user plugs",
                 error_code="USER_PLUGS_ERROR",
-                details={"user_id": str(user_id), "error": str(e)}
-            )
-
-    async def count_user_plugs(
-        self,
-        user_id: UUID,
-        plug_type: Optional[PlugType] = None,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> int:
-        """
-        Count plugs for a specific user.
-        
-        Args:
-            user_id: User ID
-            plug_type: Filter by plug type
-            filters: Additional filters
-            
-        Returns:
-            Number of matching plugs
-        """
-        try:
-            # Build base filters
-            base_filters = {"user_id": user_id}
-            
-            if plug_type:
-                base_filters["plug_type"] = plug_type
-            
-            # Merge with additional filters
-            if filters:
-                base_filters.update(filters)
-            
-            return await self.count(filters=base_filters)
-            
-        except Exception as e:
-            logger.error(f"Error counting plugs for user {user_id}: {e}")
-            raise DatabaseError(
-                "Failed to count user plugs",
-                error_code="USER_PLUGS_COUNT_ERROR",
                 details={"user_id": str(user_id), "error": str(e)}
             )
 
@@ -289,7 +198,7 @@ class PlugRepository(BaseRepository[Plug]):
         plug_type: Optional[PlugType] = None,
         skip: int = 0,
         limit: int = 100
-    ) -> List[Plug]:
+    ) -> Tuple[List[Plug], int]:
         """
         Search plugs by name, company, or email for a specific user.
         
@@ -301,9 +210,10 @@ class PlugRepository(BaseRepository[Plug]):
             limit: Maximum number of records
             
         Returns:
-            List of matching plugs
+            Tuple of (matching plugs list, total count)
         """
         try:
+            # Build search query
             query = self.db.query(self.model).filter(
                 and_(
                     self.model.user_id == user_id,
@@ -320,10 +230,14 @@ class PlugRepository(BaseRepository[Plug]):
             if plug_type:
                 query = query.filter(self.model.plug_type == plug_type)
             
+            # Get total count
+            total_count = query.count()
+            
+            # Get paginated results
             results = query.order_by(desc(self.model.created_at)).offset(skip).limit(limit).all()
             
             logger.debug(f"Found {len(results)} plugs matching search term '{search_term}' for user {user_id}")
-            return results
+            return results, total_count
             
         except Exception as e:
             logger.error(f"Error searching plugs for user {user_id}: {e}")
@@ -331,58 +245,6 @@ class PlugRepository(BaseRepository[Plug]):
                 "Failed to search user plugs",
                 error_code="SEARCH_PLUGS_ERROR",
                 details={"user_id": str(user_id), "search_term": search_term, "error": str(e)}
-            )
-
-    async def get_plugs_by_tags(
-        self,
-        user_id: UUID,
-        tags: List[str],
-        match_all: bool = False,
-        skip: int = 0,
-        limit: int = 100
-    ) -> List[Plug]:
-        """
-        Get plugs that have specific tags.
-        
-        Args:
-            user_id: User ID
-            tags: List of tags to search for
-            match_all: If True, requires all tags; if False, requires any tag
-            skip: Number of records to skip
-            limit: Maximum number of records
-            
-        Returns:
-            List of plugs with matching tags
-        """
-        try:
-            query = self.db.query(self.model).filter(
-                and_(
-                    self.model.user_id == user_id,
-                    self.model.is_deleted == False,
-                    self.model.tags.isnot(None)
-                )
-            )
-            
-            if match_all:
-                # All tags must be present
-                for tag in tags:
-                    query = query.filter(self.model.tags.contains([tag]))
-            else:
-                # Any tag must be present
-                tag_conditions = [self.model.tags.contains([tag]) for tag in tags]
-                query = query.filter(or_(*tag_conditions))
-            
-            results = query.order_by(desc(self.model.created_at)).offset(skip).limit(limit).all()
-            
-            logger.debug(f"Found {len(results)} plugs with tags {tags} for user {user_id}")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error getting plugs by tags for user {user_id}: {e}")
-            raise DatabaseError(
-                "Failed to get plugs by tags",
-                error_code="PLUGS_BY_TAGS_ERROR",
-                details={"user_id": str(user_id), "tags": tags, "error": str(e)}
             )
 
     # Statistics Methods
@@ -424,34 +286,6 @@ class PlugRepository(BaseRepository[Plug]):
             
             contacts_by_network_type = {str(nt): count for nt, count in network_type_stats if nt}
             
-            # Contacts by business type
-            business_type_stats = self.db.query(
-                self.model.business_type,
-                func.count(self.model.id)
-            ).filter(
-                and_(
-                    self.model.user_id == user_id,
-                    self.model.plug_type == PlugType.CONTACT,
-                    self.model.is_deleted == False
-                )
-            ).group_by(self.model.business_type).all()
-            
-            contacts_by_business_type = {str(bt): count for bt, count in business_type_stats if bt}
-            
-            # Targets by priority (only contacts have priority, but let's check targets that were converted)
-            priority_stats = self.db.query(
-                self.model.priority,
-                func.count(self.model.id)
-            ).filter(
-                and_(
-                    self.model.user_id == user_id,
-                    self.model.is_deleted == False,
-                    self.model.priority.isnot(None)
-                )
-            ).group_by(self.model.priority).all()
-            
-            targets_by_priority = {str(p): count for p, count in priority_stats if p}
-            
             # Recent conversions (last 30 days)
             thirty_days_ago = datetime.utcnow() - timedelta(days=30)
             recent_conversions = self.db.query(func.count(self.model.id)).filter(
@@ -467,9 +301,7 @@ class PlugRepository(BaseRepository[Plug]):
                 "total_plugs": total_plugs,
                 "total_targets": total_targets,
                 "total_contacts": total_contacts,
-                "targets_by_priority": targets_by_priority,
                 "contacts_by_network_type": contacts_by_network_type,
-                "contacts_by_business_type": contacts_by_business_type,
                 "recent_conversions": recent_conversions
             }
             
@@ -482,43 +314,4 @@ class PlugRepository(BaseRepository[Plug]):
                 "Failed to get plug statistics",
                 error_code="PLUG_STATS_ERROR",
                 details={"user_id": str(user_id), "error": str(e)}
-            )
-
-    # Bulk Operations
-    async def bulk_convert_targets_to_contacts(
-        self,
-        target_ids: List[UUID],
-        conversion_data: Dict[str, Any]
-    ) -> List[Plug]:
-        """
-        Convert multiple targets to contacts.
-        
-        Args:
-            target_ids: List of target IDs to convert
-            conversion_data: Common data to apply to all conversions
-            
-        Returns:
-            List of converted contacts
-            
-        Raises:
-            ValidationError: If any target cannot be converted
-            DatabaseError: If conversion fails
-        """
-        try:
-            converted_contacts = []
-            
-            for target_id in target_ids:
-                contact = await self.convert_target_to_contact(target_id, conversion_data)
-                if contact:
-                    converted_contacts.append(contact)
-            
-            logger.debug(f"Bulk converted {len(converted_contacts)} targets to contacts")
-            return converted_contacts
-            
-        except Exception as e:
-            logger.error(f"Error in bulk target conversion: {e}")
-            raise DatabaseError(
-                "Failed to bulk convert targets to contacts",
-                error_code="BULK_CONVERSION_ERROR",
-                details={"target_count": len(target_ids), "error": str(e)}
             )
