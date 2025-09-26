@@ -175,7 +175,8 @@ class PlugService(BaseService[Plug]):
         plug_type: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
-        search_term: Optional[str] = None
+        search_term: Optional[str] = None,
+        network_type: Optional[str] = None
     ) -> Tuple[List[Plug], int]:
         """
         Get paginated list of user's plugs with filtering and optional search.
@@ -186,6 +187,7 @@ class PlugService(BaseService[Plug]):
             skip: Number of records to skip
             limit: Maximum number of records
             search_term: Optional search term for text search
+            network_type: Filter by network type (new_client, existing_client, etc.)
             
         Returns:
             Tuple of (plugs list, total count)
@@ -202,6 +204,10 @@ class PlugService(BaseService[Plug]):
                         error_code="INVALID_PLUG_TYPE"
                     )
             
+            # Validate network_type if provided
+            if network_type:
+                await self._validate_network_type(network_type)
+            
             # Use search if search term provided, otherwise use regular list
             if search_term:
                 # Validate search term
@@ -213,6 +219,15 @@ class PlugService(BaseService[Plug]):
                 plugs, total_count = await self.repository.search_user_plugs(
                     user_id=user_id,
                     search_term=search_term.strip(),
+                    plug_type=plug_type_enum,
+                    skip=skip,
+                    limit=limit
+                )
+            elif network_type:
+                # Use network type filtering
+                plugs, total_count = await self.repository.get_user_plugs_by_network_type(
+                    user_id=user_id,
+                    network_type=network_type,
                     plug_type=plug_type_enum,
                     skip=skip,
                     limit=limit
@@ -425,3 +440,22 @@ class PlugService(BaseService[Plug]):
                 "Target needs at least name and contact info for conversion",
                 error_code="INCOMPLETE_TARGET_DATA"
             )
+
+    async def _validate_network_type(self, network_type: str) -> None:
+        """Validate network type value."""
+        from app.models.plug import NetworkType
+        
+        # Check if it's a valid enum value
+        valid_enum_values = [nt.value for nt in NetworkType]
+        
+        # Convert to lowercase for comparison
+        network_type_lower = network_type.lower().replace(' ', '_')
+        
+        if network_type_lower not in valid_enum_values:
+            # Allow custom network types but validate format
+            if len(network_type.strip()) < 2:
+                raise ValidationError(
+                    "Network type must be at least 2 characters",
+                    error_code="INVALID_NETWORK_TYPE"
+                )
+            # Custom network type is allowed

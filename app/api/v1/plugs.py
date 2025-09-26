@@ -107,8 +107,9 @@ async def delete_plug(
 async def list_plugs(
     current_user: CurrentActiveUser,
     # Search and filter parameters
-    q: Optional[str] = Query(None, min_length=1, description="Search query (name, company, email)"),
+    q: Optional[str] = Query(None, min_length=1, description="Search query (name, company, email, network_type)"),
     plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    network_type: Optional[str] = Query(None, description="Filter by network type (new_client, existing_client, new_partnership, etc.)"),
     status: Optional[str] = Query(None, description="Filter by status (new_client, existing_client, new_partnership)"),
     # Pagination parameters
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -120,15 +121,18 @@ async def list_plugs(
     Get paginated list of plugs with search and filtering capabilities.
     
     This unified endpoint handles all plug listing needs:
-    - Text search across name, company, email (when q parameter is provided)
+    - Text search across name, company, email, network_type (when q parameter is provided)
     - Filter by plug type (target/contact)
+    - Filter by network type (new_client, existing_client, new_partnership, etc.)
     - Filter by status (new_client, existing_client, new_partnership)
     - Pagination support
     
     Examples:
     - All plugs: GET /
     - Search contacts: ?q=john&plug_type=contact
-    - Filter new clients: ?plug_type=contact&status=new_client
+    - Filter new clients: ?network_type=new_client&plug_type=contact
+    - Search by network type: ?q=new_client
+    - Filter existing clients: ?network_type=existing_client
     - Search targets: ?q=company&plug_type=target
     - All contacts: ?plug_type=contact
     - All targets: ?plug_type=target
@@ -140,8 +144,8 @@ async def list_plugs(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Get plugs with optional search
-        plugs, total = await service.get_user_plugs(user_id, plug_type, skip, limit, q)
+        # Get plugs with optional search and filtering
+        plugs, total = await service.get_user_plugs(user_id, plug_type, skip, limit, q, network_type)
         
         # Apply status filter if provided
         if status:

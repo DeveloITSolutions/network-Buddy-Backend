@@ -200,11 +200,11 @@ class PlugRepository(BaseRepository[Plug]):
         limit: int = 100
     ) -> Tuple[List[Plug], int]:
         """
-        Search plugs by name, company, or email for a specific user.
+        Search plugs by name, company, email, or network_type for a specific user.
         
         Args:
             user_id: User ID
-            search_term: Search term to match against name, company, email
+            search_term: Search term to match against name, company, email, network_type
             plug_type: Filter by plug type
             skip: Number of records to skip
             limit: Maximum number of records
@@ -213,7 +213,7 @@ class PlugRepository(BaseRepository[Plug]):
             Tuple of (matching plugs list, total count)
         """
         try:
-            # Build search query
+            # Build search query with expanded search criteria
             query = self.db.query(self.model).filter(
                 and_(
                     self.model.user_id == user_id,
@@ -222,7 +222,10 @@ class PlugRepository(BaseRepository[Plug]):
                         func.concat(self.model.first_name, ' ', self.model.last_name).ilike(f"%{search_term}%"),
                         self.model.company.ilike(f"%{search_term}%"),
                         self.model.email.ilike(f"%{search_term}%"),
-                        self.model.job_title.ilike(f"%{search_term}%")
+                        self.model.job_title.ilike(f"%{search_term}%"),
+                        self.model.network_type.ilike(f"%{search_term}%"),
+                        self.model.business_type.ilike(f"%{search_term}%"),
+                        self.model.connect_reason.ilike(f"%{search_term}%")
                     )
                 )
             )
@@ -245,6 +248,59 @@ class PlugRepository(BaseRepository[Plug]):
                 "Failed to search user plugs",
                 error_code="SEARCH_PLUGS_ERROR",
                 details={"user_id": str(user_id), "search_term": search_term, "error": str(e)}
+            )
+
+    async def get_user_plugs_by_network_type(
+        self,
+        user_id: UUID,
+        network_type: str,
+        plug_type: Optional[PlugType] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> Tuple[List[Plug], int]:
+        """
+        Get plugs filtered by network type for a specific user.
+        
+        Args:
+            user_id: User ID
+            network_type: Network type to filter by
+            plug_type: Filter by plug type
+            skip: Number of records to skip
+            limit: Maximum number of records
+            
+        Returns:
+            Tuple of (matching plugs list, total count)
+        """
+        try:
+            # Build base filters
+            base_filters = {
+                "user_id": user_id,
+                "network_type": network_type
+            }
+            
+            if plug_type:
+                base_filters["plug_type"] = plug_type
+            
+            # Get plugs
+            plugs = await self.get_multi(
+                skip=skip,
+                limit=limit,
+                filters=base_filters,
+                order_by="-created_at"
+            )
+            
+            # Get total count
+            total_count = await self.count(filters=base_filters)
+            
+            logger.debug(f"Found {len(plugs)} plugs with network_type '{network_type}' for user {user_id}")
+            return plugs, total_count
+            
+        except Exception as e:
+            logger.error(f"Error getting plugs by network type for user {user_id}: {e}")
+            raise DatabaseError(
+                "Failed to get plugs by network type",
+                error_code="PLUGS_BY_NETWORK_TYPE_ERROR",
+                details={"user_id": str(user_id), "network_type": network_type, "error": str(e)}
             )
 
     # Statistics Methods
