@@ -194,3 +194,4 @@ class EventCoreService(EventBaseService):
         """
         stats_data = await self.event_repo.get_user_event_stats(user_id)
         return EventStats(**stats_data)
+

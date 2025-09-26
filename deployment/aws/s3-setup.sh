@@ -210,3 +210,4 @@ aws s3 cp /tmp/test.txt s3://$BUCKET_NAME/test.txt
 echo -e "${GREEN}Test file uploaded successfully!${NC}"
 echo "Test URL: https://$BUCKET_NAME.s3.$AWS_REGION.amazonaws.com/test.txt"
 rm -f /tmp/test.txt
+

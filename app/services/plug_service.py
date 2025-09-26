@@ -174,16 +174,18 @@ class PlugService(BaseService[Plug]):
         user_id: UUID,
         plug_type: Optional[str] = None,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        search_term: Optional[str] = None
     ) -> Tuple[List[Plug], int]:
         """
-        Get paginated list of user's plugs with filtering.
+        Get paginated list of user's plugs with filtering and optional search.
         
         Args:
             user_id: Owner user ID
             plug_type: Filter by plug type (target/contact)
             skip: Number of records to skip
             limit: Maximum number of records
+            search_term: Optional search term for text search
             
         Returns:
             Tuple of (plugs list, total count)
@@ -200,13 +202,28 @@ class PlugService(BaseService[Plug]):
                         error_code="INVALID_PLUG_TYPE"
                     )
             
-            # Get plugs and count
-            plugs, total_count = await self.repository.get_user_plugs(
-                user_id=user_id,
-                plug_type=plug_type_enum,
-                skip=skip,
-                limit=limit
-            )
+            # Use search if search term provided, otherwise use regular list
+            if search_term:
+                # Validate search term
+                if len(search_term.strip()) < 2:
+                    raise ValidationError(
+                        "Search term must be at least 2 characters",
+                        error_code="INVALID_SEARCH_TERM"
+                    )
+                plugs, total_count = await self.repository.search_user_plugs(
+                    user_id=user_id,
+                    search_term=search_term.strip(),
+                    plug_type=plug_type_enum,
+                    skip=skip,
+                    limit=limit
+                )
+            else:
+                plugs, total_count = await self.repository.get_user_plugs(
+                    user_id=user_id,
+                    plug_type=plug_type_enum,
+                    skip=skip,
+                    limit=limit
+                )
             
             return plugs, total_count
             

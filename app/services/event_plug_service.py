@@ -168,3 +168,4 @@ class EventPlugService(EventBaseService):
             logger.info(f"Removed plug {plug_id} from event {event_id}")
         
         return removed
+
