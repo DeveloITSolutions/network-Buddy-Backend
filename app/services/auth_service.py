@@ -229,7 +229,6 @@ class AuthService(BaseService[User]):
         except Exception as e:
             self._handle_generic_error(e, "verify OTP")
     
-    # Removed register_user method - no signup functionality needed
     
     async def login_user(self, request: UserLoginRequest, ip_address: str = None, user_agent: str = None) -> AuthResponse:
         """Authenticate user and return tokens with enhanced security."""
