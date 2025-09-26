@@ -251,6 +251,33 @@ async def create_agenda_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+@router.get("/{event_id}/agenda/days")
+async def get_event_agenda_days(
+    event_id: UUID,
+    current_user: CurrentActiveUser,
+    service: EventService = Depends(get_event_service)
+):
+    """
+    Get available days for agenda items in an event.
+    
+    - Requires JWT authentication
+    - User can only access their own events
+    - Returns days with their dates and agenda counts
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        days = await service.get_event_agenda_days(user_id, event_id)
+        
+        return days
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
 @router.get("/{event_id}/agenda", response_model=List[EventAgendaResponse])
 async def get_event_agenda(
     event_id: UUID,
@@ -278,6 +305,69 @@ async def get_event_agenda(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/{event_id}/agenda/{agenda_id}", response_model=EventAgendaResponse)
+async def update_agenda_item(
+    event_id: UUID,
+    agenda_id: UUID,
+    agenda_data: EventAgendaUpdate,
+    current_user: CurrentActiveUser,
+    service: EventService = Depends(get_event_service)
+):
+    """
+    Update an agenda item.
+    
+    - Requires JWT authentication
+    - User can only update agenda items from their own events
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Update agenda item through service
+        agenda = await service.update_agenda_item(user_id, event_id, agenda_id, agenda_data)
+        
+        if not agenda:
+            raise NotFoundError("Agenda item not found")
+        
+        return EventAgendaResponse.model_validate(agenda)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{event_id}/agenda/{agenda_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agenda_item(
+    event_id: UUID,
+    agenda_id: UUID,
+    current_user: CurrentActiveUser,
+    service: EventService = Depends(get_event_service)
+):
+    """
+    Delete an agenda item.
+    
+    - Requires JWT authentication
+    - User can only delete agenda items from their own events
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Delete agenda item through service
+        deleted = await service.delete_agenda_item(user_id, event_id, agenda_id)
+        
+        if not deleted:
+            raise NotFoundError("Agenda item not found")
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
 # Expense Endpoints (Deeds Module)

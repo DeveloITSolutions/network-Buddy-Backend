@@ -1,0 +1,157 @@
+# Production Docker Compose for The Plugs Backend on AWS
+version: '3.8'
+
+services:
+  # The Plugs API Application
+  api:
+    build: 
+      context: /opt/the-plugs
+      dockerfile: Dockerfile
+    container_name: the_plugs_api_prod
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - LOG_LEVEL=INFO
+    volumes:
+      - /var/log/the-plugs:/app/logs
+      - /var/uploads/the-plugs:/app/uploads
+    networks:
+      - the_plugs_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    build: 
+      context: /opt/the-plugs
+      dockerfile: Dockerfile
+    container_name: the_plugs_celery_worker_prod
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - LOG_LEVEL=INFO
+    volumes:
+      - /var/log/the-plugs:/app/logs
+      - /var/uploads/the-plugs:/app/uploads
+    networks:
+      - the_plugs_network
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Celery Beat for Scheduled Tasks
+  celery-beat:
+    build: 
+      context: /opt/the-plugs
+      dockerfile: Dockerfile
+    container_name: the_plugs_celery_beat_prod
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - LOG_LEVEL=INFO
+    volumes:
+      - /var/log/the-plugs:/app/logs
+    networks:
+      - the_plugs_network
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+        reservations:
+          memory: 128M
+          cpus: '0.05'
+
+  # Flower for Celery Monitoring (Optional)
+  flower:
+    build: 
+      context: /opt/the-plugs
+      dockerfile: Dockerfile
+    container_name: the_plugs_flower_prod
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - ENVIRONMENT=production
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+    networks:
+      - the_plugs_network
+    depends_on:
+      - celery-worker
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+
+networks:
+  the_plugs_network:
+    driver: bridge
+    name: the_plugs_network
+
+# Note: This compose file assumes:
+# 1. RDS PostgreSQL is used for database
+# 2. ElastiCache Redis is used for cache and message broker
+# 3. S3 is used for file storage
+# 4. All external services are configured via environment variables
