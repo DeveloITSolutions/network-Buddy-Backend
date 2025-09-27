@@ -13,7 +13,21 @@ class UserLoginRequest(BaseModel):
     """User login request schema."""
         
     email: EmailStr = Field(..., description="User email address")
-    password: str = Field(..., description="User password")
+    password: str = Field(..., min_length=1, max_length=200, description="User password")
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_length(cls, v):
+        """Validate password length to prevent bcrypt issues."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Password cannot be empty")
+        
+        # Check UTF-8 byte length (bcrypt limit is 72 bytes)
+        byte_length = len(v.encode('utf-8'))
+        if byte_length > 200:  # Reasonable upper limit
+            raise ValueError("Password is too long (maximum 200 characters)")
+        
+        return v
 
 
 class ResetPasswordRequest(BaseModel):

@@ -208,3 +208,4 @@ class EventMediaService(EventBaseService):
         # Delete media
         return await self.media_repo.delete(media_id, soft=True)
 
+

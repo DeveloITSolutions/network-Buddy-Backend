@@ -13,8 +13,14 @@ import hmac
 
 from .settings import settings
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing context with explicit bcrypt configuration
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto",
+    bcrypt__default_rounds=12,
+    bcrypt__min_rounds=10,
+    bcrypt__max_rounds=15
+)
 
 # JWT Bearer token scheme
 security_scheme = HTTPBearer(auto_error=False)
@@ -129,9 +135,28 @@ class SecurityConfig:
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
+    def _preprocess_password(self, password: str) -> str:
+        """
+        Preprocess password to handle bcrypt limitations.
+        
+        bcrypt has a 72-byte limit. For longer passwords, we:
+        1. Hash with SHA-256 to get a fixed 64-byte string
+        2. This ensures consistent behavior and security
+        
+        Args:
+            password: Plain text password
+            
+        Returns:
+            str: Preprocessed password safe for bcrypt
+        """
+        if len(password.encode('utf-8')) > 72:
+            # Hash long passwords with SHA-256 to get a fixed 64-byte string
+            return hashlib.sha256(password.encode('utf-8')).hexdigest()
+        return password
+    
     def hash_password(self, password: str) -> str:
         """
-        Hash password using bcrypt.
+        Hash password using bcrypt with preprocessing for long passwords.
         
         Args:
             password: Plain text password
@@ -139,11 +164,12 @@ class SecurityConfig:
         Returns:
             str: Hashed password
         """
-        return pwd_context.hash(password)
+        processed_password = self._preprocess_password(password)
+        return pwd_context.hash(processed_password)
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """
-        Verify password against hash.
+        Verify password against hash with preprocessing for long passwords.
         
         Args:
             plain_password: Plain text password
@@ -152,7 +178,15 @@ class SecurityConfig:
         Returns:
             bool: True if password matches, False otherwise
         """
-        return pwd_context.verify(plain_password, hashed_password)
+        try:
+            processed_password = self._preprocess_password(plain_password)
+            return pwd_context.verify(processed_password, hashed_password)
+        except Exception as e:
+            # Log the error for debugging but don't expose details
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Password verification error: {e}")
+            return False
     
     def generate_secure_token(self, length: int = 32) -> str:
         """
