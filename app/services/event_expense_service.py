@@ -164,3 +164,5 @@ class EventExpenseService(EventBaseService):
         return await self.expense_repo.delete(expense_id, soft=True)
 
 
+
+

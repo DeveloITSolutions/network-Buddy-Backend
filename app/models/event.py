@@ -281,6 +281,16 @@ class Event(BaseModel):
             address_parts.append(self.postal_code)
         
         return ", ".join(address_parts) if address_parts else "Location not specified"
+    
+    @property
+    def google_maps_url(self) -> Optional[str]:
+        """Get Google Maps URL for the event location."""
+        return self.get_google_maps_url()
+    
+    @property
+    def display_address(self) -> str:
+        """Get formatted address for display."""
+        return self.get_display_address()
 
 
 class EventAgenda(BaseModel):
