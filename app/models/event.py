@@ -7,9 +7,9 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Integer, String, Text, 
-    UniqueConstraint, CheckConstraint
+    UniqueConstraint, CheckConstraint, Numeric
 )
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
@@ -89,6 +89,25 @@ class Event(BaseModel):
         nullable=True
     )
     
+    # Geographic coordinates (from Google Maps)
+    latitude: Mapped[Optional[float]] = mapped_column(
+        Numeric(10, 8),
+        nullable=True,
+        index=True
+    )
+    
+    longitude: Mapped[Optional[float]] = mapped_column(
+        Numeric(11, 8),
+        nullable=True,
+        index=True
+    )
+    
+    # Additional location metadata (Google Places data)
+    location_metadata: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True
+    )
+    
     # Event details
     website_url: Mapped[Optional[str]] = mapped_column(
         String(512),
@@ -156,6 +175,8 @@ class Event(BaseModel):
     # Constraints
     __table_args__ = (
         CheckConstraint("end_date > start_date", name="check_end_after_start"),
+        CheckConstraint("latitude >= -90 AND latitude <= 90", name="check_latitude_range"),
+        CheckConstraint("longitude >= -180 AND longitude <= 180", name="check_longitude_range"),
         UniqueConstraint("user_id", "title", "start_date", name="unique_user_event"),
     )
     
@@ -205,6 +226,61 @@ class Event(BaseModel):
                     categories[category] = 0
                 categories[category] += expense.amount
         return categories
+    
+    @property
+    def has_coordinates(self) -> bool:
+        """Check if event has valid coordinates."""
+        return self.latitude is not None and self.longitude is not None
+    
+    @property
+    def coordinates(self) -> Optional[tuple]:
+        """Get coordinates as a tuple (latitude, longitude)."""
+        if self.has_coordinates:
+            return (float(self.latitude), float(self.longitude))
+        return None
+    
+    def set_coordinates(self, latitude: float, longitude: float, metadata: Optional[dict] = None) -> None:
+        """
+        Set event coordinates with validation.
+        
+        Args:
+            latitude: Latitude (-90 to 90)
+            longitude: Longitude (-180 to 180)
+            metadata: Optional location metadata from Google Places
+        """
+        if not (-90 <= latitude <= 90):
+            raise ValueError("Latitude must be between -90 and 90")
+        if not (-180 <= longitude <= 180):
+            raise ValueError("Longitude must be between -180 and 180")
+        
+        self.latitude = latitude
+        self.longitude = longitude
+        if metadata:
+            self.location_metadata = metadata
+    
+    def get_google_maps_url(self) -> Optional[str]:
+        """Generate Google Maps URL for the event location."""
+        if not self.has_coordinates:
+            return None
+        return f"https://www.google.com/maps?q={self.latitude},{self.longitude}"
+    
+    def get_display_address(self) -> str:
+        """Get formatted address for display."""
+        address_parts = []
+        if self.location_name:
+            address_parts.append(self.location_name)
+        if self.location_address:
+            address_parts.append(self.location_address)
+        if self.city:
+            address_parts.append(self.city)
+        if self.state:
+            address_parts.append(self.state)
+        if self.country:
+            address_parts.append(self.country)
+        if self.postal_code:
+            address_parts.append(self.postal_code)
+        
+        return ", ".join(address_parts) if address_parts else "Location not specified"
 
 
 class EventAgenda(BaseModel):
