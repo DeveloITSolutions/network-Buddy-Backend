@@ -101,11 +101,24 @@ class EventMediaService(EventBaseService):
             content_type, _ = mimetypes.guess_type(filename)
             file_type = content_type or 'application/octet-stream'
             
+            # Ensure file_type doesn't exceed database limit (32 chars)
+            if len(file_type) > 32:
+                file_type = file_type[:32]
+                logger.warning(f"File type truncated to fit database limit: {file_type}")
+            
             # Generate S3 key
             s3_key = s3_service()._generate_s3_key(
                 prefix=f"events/{event_id}/media",
                 filename=filename
             )
+            
+            # Ensure s3_key doesn't exceed database limit (512 chars)
+            if len(s3_key) > 512:
+                logger.error(f"S3 key too long for database: {len(s3_key)} chars")
+                raise BusinessLogicError(
+                    "Generated S3 key exceeds database storage limit",
+                    error_code="S3_KEY_TOO_LONG"
+                )
             
             # Upload to S3
             file_url = s3_service().upload_file(
@@ -118,10 +131,18 @@ class EventMediaService(EventBaseService):
                 }
             )
             
+            # Ensure file_url doesn't exceed database limit (512 chars)
+            if len(file_url) > 512:
+                logger.error(f"File URL too long for database: {len(file_url)} chars")
+                raise BusinessLogicError(
+                    "Generated file URL exceeds database storage limit",
+                    error_code="FILE_URL_TOO_LONG"
+                )
+            
             # Create media record
             media_dict = {
                 "event_id": event_id,
-                "title": upload_data.title,
+                "title": upload_data.title[:256] if upload_data.title and len(upload_data.title) > 256 else upload_data.title,
                 "description": upload_data.description,
                 "file_url": file_url,
                 "s3_key": s3_key,
@@ -130,7 +151,13 @@ class EventMediaService(EventBaseService):
                 "tags": self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
             }
             
-            media = await self.media_repo.create(media_dict)
+            logger.info(f"Creating media record with data: {media_dict}")
+            try:
+                media = await self.media_repo.create(media_dict)
+            except Exception as db_error:
+                logger.error(f"Database creation failed: {db_error}")
+                logger.error(f"Media dict that failed: {media_dict}")
+                raise
             
             logger.info(f"Uploaded media file {filename} to S3 for event {event_id}, media ID: {media.id}")
             return media
@@ -398,8 +425,26 @@ class EventMediaService(EventBaseService):
         
         return stream, filename, media.file_type or 'application/octet-stream'
 
-
-
-
+    def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert tags list to string format for database storage.
+        
+        Args:
+            data: Dictionary containing tags list
+            
+        Returns:
+            Dictionary with tags converted to string
+        """
+        if 'tags' in data and data['tags'] is not None:
+            if isinstance(data['tags'], list):
+                # Join tags with comma separator
+                data['tags'] = ', '.join(str(tag) for tag in data['tags'])
+            elif isinstance(data['tags'], str):
+                # Already a string, keep as is
+                pass
+            else:
+                # Convert other types to string
+                data['tags'] = str(data['tags'])
+        return data
 
 
