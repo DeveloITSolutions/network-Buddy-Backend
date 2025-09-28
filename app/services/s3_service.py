@@ -139,7 +139,7 @@ class S3Service:
     
     def upload_file(
         self,
-        file_obj: BinaryIO,
+        file_obj: Union[BinaryIO, bytes],
         key: str,
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, str]] = None
@@ -148,7 +148,7 @@ class S3Service:
         Upload a file to S3.
         
         Args:
-            file_obj: File object to upload
+            file_obj: File object (BinaryIO) or bytes to upload
             key: S3 object key
             content_type: MIME type of the file
             metadata: Additional metadata for the object
@@ -161,10 +161,17 @@ class S3Service:
             ValidationError: If file is too large
         """
         try:
-            # Get file size
-            file_obj.seek(0, 2)  # Seek to end
-            file_size = file_obj.tell()
-            file_obj.seek(0)  # Reset to beginning
+            # Get file size - handle both file objects and bytes
+            if isinstance(file_obj, bytes):
+                file_size = len(file_obj)
+                # Convert bytes to BytesIO for upload_fileobj
+                from io import BytesIO
+                file_obj = BytesIO(file_obj)
+            else:
+                # Handle file-like objects
+                file_obj.seek(0, 2)  # Seek to end
+                file_size = file_obj.tell()
+                file_obj.seek(0)  # Reset to beginning
             
             # Validate file size
             self._validate_file_size(file_size)
