@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ValidationError, NotFoundError, BusinessLogicError
 from app.models.event import Event, EventMedia
 from app.repositories.event_repository import EventMediaRepository
-from app.schemas.event import EventMediaCreate, EventMediaUpdate
+from app.schemas.event import EventMediaCreate, EventMediaUpdate, EventMediaUpload
 from app.services.decorators import handle_service_errors, require_event_ownership
 from app.services.event_base_service import EventBaseService
+from app.services.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,85 @@ class EventMediaService(EventBaseService):
         
         logger.info(f"Created media {media.id} for event {event_id}")
         return media
+
+    @handle_service_errors("upload media file", "MEDIA_UPLOAD_FAILED")
+    @require_event_ownership
+    async def upload_media_file(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        file_obj: Any,
+        filename: str,
+        upload_data: EventMediaUpload
+    ) -> EventMedia:
+        """
+        Upload a file to S3 and create a media record.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            file_obj: File object to upload
+            filename: Original filename
+            upload_data: Upload metadata
+            
+        Returns:
+            Created media item with S3 URL
+        """
+        try:
+            # Generate S3 key
+            s3_key = s3_service()._generate_s3_key(
+                prefix=f"events/{event_id}/media",
+                filename=filename
+            )
+            
+            # Upload to S3
+            file_url = s3_service().upload_file(
+                file_obj=file_obj,
+                key=s3_key,
+                metadata={
+                    'event_id': str(event_id),
+                    'user_id': str(user_id),
+                    'original_filename': filename
+                }
+            )
+            
+            # Get file size
+            file_obj.seek(0, 2)  # Seek to end
+            file_size = file_obj.tell()
+            file_obj.seek(0)  # Reset to beginning
+            
+            # Determine content type
+            import mimetypes
+            content_type, _ = mimetypes.guess_type(filename)
+            file_type = content_type or 'application/octet-stream'
+            
+            # Create media record
+            media_dict = {
+                "event_id": event_id,
+                "title": upload_data.title,
+                "description": upload_data.description,
+                "file_url": file_url,
+                "s3_key": s3_key,
+                "file_type": file_type,
+                "file_size": file_size,
+                "tags": self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
+            }
+            
+            media = await self.media_repo.create(media_dict)
+            
+            logger.info(f"Uploaded media file {filename} to S3 for event {event_id}, media ID: {media.id}")
+            return media
+            
+        except Exception as e:
+            # If database creation fails, clean up S3 file
+            try:
+                if 's3_key' in locals():
+                    s3_service().delete_file(s3_key)
+                    logger.info(f"Cleaned up S3 file after database error: {s3_key}")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup S3 file {s3_key}: {cleanup_error}")
+            
+            raise e
 
     @handle_service_errors("get event media", "EVENT_MEDIA_RETRIEVAL_FAILED")
     @require_event_ownership
@@ -205,8 +285,112 @@ class EventMediaService(EventBaseService):
         if not media or media.event_id != event_id:
             return False
         
-        # Delete media
+        # Delete from S3 if s3_key exists
+        if media.s3_key:
+            try:
+                s3_service().delete_file(media.s3_key)
+                logger.info(f"Deleted S3 file: {media.s3_key}")
+            except Exception as e:
+                logger.error(f"Failed to delete S3 file {media.s3_key}: {e}")
+                # Continue with database deletion even if S3 deletion fails
+        
+        # Delete media record
         return await self.media_repo.delete(media_id, soft=True)
+
+    @handle_service_errors("download media file", "MEDIA_DOWNLOAD_FAILED")
+    @require_event_ownership
+    async def download_media_file(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        media_id: UUID
+    ) -> Tuple[bytes, str, str]:
+        """
+        Download a media file from S3.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            media_id: Media ID
+            
+        Returns:
+            Tuple of (file_content, filename, content_type)
+        """
+        # Verify media belongs to event
+        media = await self.media_repo.get(media_id)
+        if not media or media.event_id != event_id:
+            raise NotFoundError(
+                f"Media {media_id} not found for event {event_id}",
+                error_code="MEDIA_NOT_FOUND"
+            )
+        
+        # Download from S3
+        if not media.s3_key:
+            raise BusinessLogicError(
+                "Media file not available for download (no S3 key)",
+                error_code="MEDIA_NO_S3_KEY"
+            )
+        
+        file_content = s3_service().download_file(media.s3_key)
+        
+        # Generate filename
+        filename = media.title or f"media_{media_id}"
+        if media.file_type:
+            # Add appropriate extension based on content type
+            import mimetypes
+            ext = mimetypes.guess_extension(media.file_type)
+            if ext and not filename.endswith(ext):
+                filename += ext
+        
+        return file_content, filename, media.file_type or 'application/octet-stream'
+
+    @handle_service_errors("get media file stream", "MEDIA_STREAM_FAILED")
+    @require_event_ownership
+    async def get_media_file_stream(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        media_id: UUID
+    ) -> Tuple[Any, str, str]:
+        """
+        Get a streaming download for a media file from S3.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            media_id: Media ID
+            
+        Returns:
+            Tuple of (stream_object, filename, content_type)
+        """
+        # Verify media belongs to event
+        media = await self.media_repo.get(media_id)
+        if not media or media.event_id != event_id:
+            raise NotFoundError(
+                f"Media {media_id} not found for event {event_id}",
+                error_code="MEDIA_NOT_FOUND"
+            )
+        
+        # Get stream from S3
+        if not media.s3_key:
+            raise BusinessLogicError(
+                "Media file not available for streaming (no S3 key)",
+                error_code="MEDIA_NO_S3_KEY"
+            )
+        
+        stream = s3_service().get_file_stream(media.s3_key)
+        
+        # Generate filename
+        filename = media.title or f"media_{media_id}"
+        if media.file_type:
+            # Add appropriate extension based on content type
+            import mimetypes
+            ext = mimetypes.guess_extension(media.file_type)
+            if ext and not filename.endswith(ext):
+                filename += ext
+        
+        return stream, filename, media.file_type or 'application/octet-stream'
+
 
 
 

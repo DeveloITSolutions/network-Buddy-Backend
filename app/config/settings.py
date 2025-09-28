@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     max_file_size: int = Field(default=10 * 1024 * 1024, description="Max file size in bytes (10MB)")
     upload_path: str = Field(default="uploads", description="File upload directory")
     
+    # AWS S3 Settings
+    s3_bucket_name: str = Field(default="plugs-bucket", description="S3 bucket name for file storage")
+    s3_region: str = Field(default="us-east-1", description="AWS S3 region")
+    s3_use_iam_role: bool = Field(default=True, description="Use IAM role for S3 access (recommended for EC2)")
+    
     @property
     def cors_origins_list(self) -> List[str]:
         """Get CORS origins as a list."""

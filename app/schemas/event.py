@@ -229,15 +229,24 @@ class EventMediaBase(BaseModel):
     
     title: Optional[str] = Field(None, max_length=256, description="Media title")
     description: Optional[str] = Field(None, description="Media description")
-    file_url: str = Field(..., description="Media file URL")
-    file_type: str = Field(..., min_length=1, max_length=32, description="File type")
+    file_url: str = Field(..., description="Media file URL (S3 URL)")
+    file_type: str = Field(..., min_length=1, max_length=32, description="File type/MIME type")
     file_size: Optional[int] = Field(None, ge=0, description="File size in bytes")
     tags: Optional[List[str]] = Field(None, description="Media tags")
+    s3_key: Optional[str] = Field(None, description="S3 object key for the file")
 
 
 class EventMediaCreate(EventMediaBase):
     """Schema for creating media."""
     pass
+
+
+class EventMediaUpload(BaseModel):
+    """Schema for media file upload."""
+    
+    title: Optional[str] = Field(None, max_length=256, description="Media title")
+    description: Optional[str] = Field(None, description="Media description")
+    tags: Optional[List[str]] = Field(None, description="Media tags")
 
 
 class EventMediaUpdate(BaseModel):
@@ -249,6 +258,7 @@ class EventMediaUpdate(BaseModel):
     file_type: Optional[str] = Field(None, min_length=1, max_length=32)
     file_size: Optional[int] = Field(None, ge=0)
     tags: Optional[List[str]] = None
+    s3_key: Optional[str] = None
 
 
 class EventMediaResponse(EventMediaBase):

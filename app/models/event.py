@@ -442,6 +442,12 @@ class EventMedia(BaseModel):
         nullable=False
     )
     
+    s3_key: Mapped[Optional[str]] = mapped_column(
+        String(512),
+        nullable=True,
+        index=True
+    )
+    
     file_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

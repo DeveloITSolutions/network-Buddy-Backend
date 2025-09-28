@@ -5,7 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.dependencies import DatabaseSession, CurrentActiveUser
 from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
@@ -13,10 +13,11 @@ from app.schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse, EventStats,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
-    EventMediaCreate, EventMediaUpdate, EventMediaResponse,
+    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload,
     EventPlugCreate, EventPlugResponse, EventFilters
 )
 from app.services.event_service import EventService
+from app.services.event_media_service import EventMediaService
 from app.services.file_upload_service import FileUploadService
 
 router = APIRouter(tags=["Events"])
@@ -30,6 +31,11 @@ def get_event_service(db: DatabaseSession) -> EventService:
 def get_file_upload_service(db: DatabaseSession) -> FileUploadService:
     """Dependency to get file upload service instance."""
     return FileUploadService(db)
+
+
+def get_event_media_service(db: DatabaseSession) -> EventMediaService:
+    """Dependency to get event media service instance."""
+    return EventMediaService(db)
 
 
 # Event Management Endpoints
@@ -431,53 +437,48 @@ async def get_event_expenses(
 
 # Media Endpoints (Zone Module)
 @router.post("/{event_id}/media", response_model=EventMediaResponse, status_code=status.HTTP_201_CREATED)
-async def create_media(
+async def upload_media_to_s3(
     event_id: UUID,
     current_user: CurrentActiveUser,
-    file: UploadFile = File(..., description="Media file to upload"),
+    file: UploadFile = File(..., description="Media file to upload to S3"),
     title: Optional[str] = Form(None, description="Media title"),
     description: Optional[str] = Form(None, description="Media description"),
     tags: Optional[str] = Form(None, description="Comma-separated tags"),
-    service: EventService = Depends(get_event_service),
-    upload_service: FileUploadService = Depends(get_file_upload_service)
+    media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
-    Create a new media item for an event with file upload.
+    Upload a media file to S3 and create a media record.
     
     - Requires JWT authentication
     - User can only add media to their own events
     - Accepts multipart/form-data for file uploads
+    - Files are stored in S3, only metadata is stored in database
     - Supports images, videos, documents, and audio files
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Upload file and get file information
-        file_url, file_type, file_size, original_filename = await upload_service.upload_file(
-            file=file,
-            user_id=user_id,
-            event_id=event_id,
-            subdirectory="events"
-        )
-        
         # Parse tags
         tag_list = []
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
         
-        # Create media data
-        media_data = EventMediaCreate(
-            title=title or original_filename,
+        # Create upload data
+        upload_data = EventMediaUpload(
+            title=title,
             description=description,
-            file_url=file_url,
-            file_type=file_type,
-            file_size=file_size,
             tags=tag_list if tag_list else None
         )
         
-        # Create media through service
-        media = await service.create_media(user_id, event_id, media_data)
+        # Upload file to S3 and create media record
+        media = await media_service.upload_media_file(
+            user_id=user_id,
+            event_id=event_id,
+            file_obj=file.file,
+            filename=file.filename or "unknown_file",
+            upload_data=upload_data
+        )
         
         return EventMediaResponse.model_validate(media)
     except ValidationError as e:
@@ -525,18 +526,19 @@ async def get_event_media(
     file_type: Optional[str] = Query(None, description="Filter by file type"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
-    service: EventService = Depends(get_event_service)
+    media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
     Get media for an event.
     
     - Requires JWT authentication
     - User can only access their own events
+    - Returns media metadata with S3 URLs
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        media, total = await service.get_event_media(user_id, event_id, file_type, skip, limit)
+        media, total = await media_service.get_event_media(user_id, event_id, file_type, skip, limit)
         
         return [EventMediaResponse.model_validate(media_item) for media_item in media]
     except ValidationError as e:
@@ -552,31 +554,21 @@ async def delete_media(
     event_id: UUID,
     media_id: UUID,
     current_user: CurrentActiveUser,
-    service: EventService = Depends(get_event_service),
-    upload_service: FileUploadService = Depends(get_file_upload_service)
+    media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
     Delete a media item from an event.
     
     - Requires JWT authentication
     - User can only delete media from their own events
-    - Also removes the file from storage
+    - Also removes the file from S3
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Get media item first to get file URL
-        media = await service.get_event_media_item(user_id, event_id, media_id)
-        if not media:
-            raise NotFoundError("Media not found")
-        
-        # Delete file from storage
-        if media.file_url:
-            await upload_service.delete_file(media.file_url)
-        
-        # Delete media record
-        deleted = await service.delete_media(user_id, event_id, media_id)
+        # Delete media record and S3 file
+        deleted = await media_service.delete_media(user_id, event_id, media_id)
         if not deleted:
             raise NotFoundError("Media not found")
             
@@ -588,39 +580,83 @@ async def delete_media(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-@router.get("/media/{file_path:path}")
-async def serve_media_file(
-    file_path: str,
+@router.get("/{event_id}/media/{media_id}/download")
+async def download_media_file(
+    event_id: UUID,
+    media_id: UUID,
     current_user: CurrentActiveUser,
-    upload_service: FileUploadService = Depends(get_file_upload_service)
+    media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
-    Serve uploaded media files.
+    Download a media file from S3.
     
     - Requires JWT authentication
-    - Serves files from the uploads directory
+    - User can only download media from their own events
+    - Returns the file content with appropriate headers
     """
     try:
-        # Construct full file path
-        full_path = f"uploads/{file_path}"
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
         
-        # Get file info
-        file_info = upload_service.get_file_info(f"/{full_path}")
-        if not file_info or not file_info.get("exists"):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        # Download file from S3
+        file_content, filename, content_type = await media_service.download_media_file(
+            user_id, event_id, media_id
+        )
         
         # Return file response
         return FileResponse(
-            path=file_info["path"],
-            media_type="application/octet-stream",
-            filename=file_path.split("/")[-1]
+            path=None,  # We'll provide content directly
+            media_type=content_type,
+            filename=filename,
+            content=file_content
         )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error serving file {file_path}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to serve file")
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.get("/{event_id}/media/{media_id}/stream")
+async def stream_media_file(
+    event_id: UUID,
+    media_id: UUID,
+    current_user: CurrentActiveUser,
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Stream a media file from S3.
+    
+    - Requires JWT authentication
+    - User can only stream media from their own events
+    - Returns a streaming response for large files
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Get file stream from S3
+        stream, filename, content_type = await media_service.get_media_file_stream(
+            user_id, event_id, media_id
+        )
+        
+        # Create streaming response
+        return StreamingResponse(
+            stream,
+            media_type=content_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
 
 
 # Event-Plug Association Endpoints
