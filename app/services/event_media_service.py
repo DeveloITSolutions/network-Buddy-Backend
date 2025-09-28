@@ -2,7 +2,7 @@
 Event media service for media operations.
 """
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -66,7 +66,7 @@ class EventMediaService(EventBaseService):
         self,
         user_id: UUID,
         event_id: UUID,
-        file_obj: Any,
+        file_obj: Union[Any, bytes],  # Can be file-like object or bytes
         filename: str,
         upload_data: EventMediaUpload
     ) -> EventMedia:
@@ -84,6 +84,23 @@ class EventMediaService(EventBaseService):
             Created media item with S3 URL
         """
         try:
+            # Get file size BEFORE uploading (file object will be consumed by S3 upload)
+            if isinstance(file_obj, bytes):
+                file_size = len(file_obj)
+            else:
+                try:
+                    file_obj.seek(0, 2)  # Seek to end
+                    file_size = file_obj.tell()
+                    file_obj.seek(0)  # Reset to beginning
+                except (OSError, ValueError) as e:
+                    logger.warning(f"Could not determine file size for {filename}: {e}")
+                    file_size = 0  # Default to 0 if we can't determine size
+            
+            # Determine content type
+            import mimetypes
+            content_type, _ = mimetypes.guess_type(filename)
+            file_type = content_type or 'application/octet-stream'
+            
             # Generate S3 key
             s3_key = s3_service()._generate_s3_key(
                 prefix=f"events/{event_id}/media",
@@ -100,16 +117,6 @@ class EventMediaService(EventBaseService):
                     'original_filename': filename
                 }
             )
-            
-            # Get file size
-            file_obj.seek(0, 2)  # Seek to end
-            file_size = file_obj.tell()
-            file_obj.seek(0)  # Reset to beginning
-            
-            # Determine content type
-            import mimetypes
-            content_type, _ = mimetypes.guess_type(filename)
-            file_type = content_type or 'application/octet-stream'
             
             # Create media record
             media_dict = {

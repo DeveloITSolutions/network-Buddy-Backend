@@ -471,11 +471,22 @@ async def upload_media_to_s3(
             tags=tag_list if tag_list else None
         )
         
+        # Read file content into memory to avoid I/O issues
+        # Limit file size to prevent memory issues (e.g., 100MB max)
+        max_file_size = 100 * 1024 * 1024  # 100MB
+        file_content = await file.read()
+        
+        if len(file_content) > max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size ({len(file_content)} bytes) exceeds maximum allowed size ({max_file_size} bytes)"
+            )
+        
         # Upload file to S3 and create media record
         media = await media_service.upload_media_file(
             user_id=user_id,
             event_id=event_id,
-            file_obj=file.file,
+            file_obj=file_content,
             filename=file.filename or "unknown_file",
             upload_data=upload_data
         )
