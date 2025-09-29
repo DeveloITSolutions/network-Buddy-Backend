@@ -43,3 +43,4 @@ echo "Your backend should now accept requests from any frontend URL."
 echo ""
 echo "Test your API at: http://localhost:8000/health"
 echo "API Documentation: http://localhost:8000/docs"
+

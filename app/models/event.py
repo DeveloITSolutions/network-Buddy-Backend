@@ -524,7 +524,83 @@ class EventPlug(BaseModel):
     event: Mapped["Event"] = relationship("Event", back_populates="event_plugs")
     plug: Mapped["Plug"] = relationship("Plug")
     
+    # Plug media relationship
+    plug_media: Mapped[List["EventPlugMedia"]] = relationship(
+        "EventPlugMedia",
+        back_populates="event_plug",
+        cascade="all, delete-orphan",
+        order_by="EventPlugMedia.created_at.desc()"
+    )
+    
     # Constraints
     __table_args__ = (
         UniqueConstraint("event_id", "plug_id", name="unique_event_plug"),
+    )
+
+
+class EventPlugMedia(BaseModel):
+    """
+    Media content (snaps/voice recordings) for specific plugs within events.
+    Simple model with only essential fields for S3 file storage.
+    """
+    
+    __tablename__ = "event_plug_media"
+    
+    # S3 file information
+    file_url: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False
+    )
+    
+    s3_key: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        index=True
+    )
+    
+    file_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False
+    )
+    
+    # Media category: 'snap' for images, 'voice' for audio recordings
+    media_category: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True
+    )
+    
+    # Event and plug relationships
+    event_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    plug_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("plugs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    event_plug_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("event_plugs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    # Relationships
+    event: Mapped["Event"] = relationship("Event")
+    plug: Mapped["Plug"] = relationship("Plug")
+    event_plug: Mapped["EventPlug"] = relationship("EventPlug", back_populates="plug_media")
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            "media_category IN ('snap', 'voice')", 
+            name="check_media_category"
+        ),
     )
