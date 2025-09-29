@@ -13,6 +13,7 @@ from app.repositories.event_repository import EventPlugRepository
 from app.schemas.event import EventPlugCreate, EventPlugUpdate
 from app.services.decorators import handle_service_errors, require_event_ownership, require_plug_ownership
 from app.services.event_base_service import EventBaseService
+from app.services.plug_service import PlugService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class EventPlugService(EventBaseService):
         """Initialize event plug service."""
         super().__init__(db)
         self.plug_repo = EventPlugRepository(db)
+        self.plug_service = PlugService(db)
 
     @handle_service_errors("add plug to event", "ADD_PLUG_TO_EVENT_FAILED")
     @require_event_ownership
@@ -49,7 +51,7 @@ class EventPlugService(EventBaseService):
             Created event-plug association
         """
         # Verify plug ownership
-        plug = await self._verify_plug_ownership(user_id, plug_id)
+        plug = await self.plug_service.get_user_plug(user_id, plug_id)
         if not plug:
             raise NotFoundError("Plug not found")
         
