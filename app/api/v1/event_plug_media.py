@@ -2,6 +2,7 @@
 API endpoints for event plug media management.
 Simple endpoints for uploading and retrieving media files.
 """
+import logging
 from typing import List, Optional
 from uuid import UUID
 
@@ -68,6 +69,103 @@ async def upload_plug_media_to_s3(
         )
         
         return EventPlugMediaResponse.model_validate(media)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/{event_id}/plugs/{plug_id}/media/upload-multiple", response_model=List[EventPlugMediaResponse], status_code=status.HTTP_201_CREATED)
+async def upload_multiple_plug_media_to_s3(
+    event_id: UUID,
+    plug_id: UUID,
+    current_user: CurrentActiveUser,
+    files: List[UploadFile] = File(..., description="Multiple media files to upload to S3"),
+    media_category: str = Form(..., description="Media category: 'snap' or 'voice'"),
+    service: EventPlugMediaService = Depends(get_event_plug_media_service)
+):
+    """
+    Upload multiple media files (snaps or voice) to S3 for a specific plug within an event.
+    
+    - Requires JWT authentication
+    - User can only add media to their own events and plugs
+    - Files are stored in S3 with organized paths
+    - Supports multiple images (snaps) and audio files (voice recordings) in one request
+    - Maximum 20 files per request
+    - Each file max size: 100MB
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Validate number of files
+        if len(files) > 20:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 20 files allowed per upload"
+            )
+        
+        if len(files) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one file is required"
+            )
+        
+        uploaded_media = []
+        failed_uploads = []
+        
+        # Process each file
+        for file in files:
+            try:
+                # Create upload data
+                upload_data = EventPlugMediaUpload(media_category=media_category)
+                
+                # Read file content
+                file_content = await file.read()
+                
+                # Check file size (100MB max)
+                max_file_size = 100 * 1024 * 1024
+                if len(file_content) > max_file_size:
+                    failed_uploads.append({
+                        "filename": file.filename,
+                        "error": "File size exceeds maximum allowed size (100MB)"
+                    })
+                    continue
+                
+                # Upload file to S3 and create media record
+                media = await service.upload_plug_media_file(
+                    user_id=user_id,
+                    event_id=event_id,
+                    plug_id=plug_id,
+                    file_obj=file_content,
+                    filename=file.filename or "unknown_file",
+                    upload_data=upload_data
+                )
+                
+                uploaded_media.append(EventPlugMediaResponse.model_validate(media))
+                
+            except Exception as e:
+                failed_uploads.append({
+                    "filename": file.filename,
+                    "error": str(e)
+                })
+        
+        # If all uploads failed, raise error
+        if len(uploaded_media) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"All uploads failed. Errors: {failed_uploads}"
+            )
+        
+        # If some uploads failed, log warning but return successful ones
+        if len(failed_uploads) > 0:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Some uploads failed for plug {plug_id} in event {event_id}: {failed_uploads}")
+        
+        return uploaded_media
+        
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:
