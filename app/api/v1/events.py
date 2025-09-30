@@ -14,7 +14,7 @@ from app.schemas.event import (
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
     EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload,
-    EventPlugCreate, EventPlugResponse, EventFilters
+    EventPlugCreate, EventPlugResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
 from app.services.event_media_service import EventMediaService
@@ -751,6 +751,50 @@ async def remove_plug_from_event(
             raise NotFoundError("Plug not found in event")
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/{event_id}/plugs/batch", response_model=EventPlugBatchResponse, status_code=status.HTTP_201_CREATED)
+async def add_multiple_plugs_to_event(
+    event_id: UUID,
+    batch_data: EventPlugBatchCreate,
+    current_user: CurrentActiveUser,
+    service: EventService = Depends(get_event_service)
+):
+    """
+    Add multiple plugs to an event in batch.
+    
+    - Requires JWT authentication
+    - User can only add their own plugs to their own events
+    - Supports adding up to 50 plugs at once
+    - Returns detailed results for successful and failed associations
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Convert batch data to list of dictionaries
+        plugs_data = [plug.model_dump() for plug in batch_data.plugs]
+        
+        # Add plugs to event through service
+        result = await service.add_multiple_plugs_to_event(user_id, event_id, plugs_data)
+        
+        # Convert created associations to response format
+        created_responses = [EventPlugResponse.model_validate(assoc) for assoc in result["created"]]
+        
+        return EventPlugBatchResponse(
+            created=created_responses,
+            failed=result["failed"],
+            total_requested=result["total_requested"],
+            total_created=result["total_created"],
+            total_failed=result["total_failed"]
+        )
+        
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

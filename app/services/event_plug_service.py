@@ -171,6 +171,84 @@ class EventPlugService(EventBaseService):
         
         return removed
 
+    @handle_service_errors("add multiple plugs to event", "BATCH_ADD_PLUGS_TO_EVENT_FAILED")
+    @require_event_ownership
+    async def add_multiple_plugs_to_event(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        plugs_data: List[dict]
+    ) -> dict:
+        """
+        Add multiple plugs to an event in batch.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            plugs_data: List of plug data with plug_id, notes, priority
+            
+        Returns:
+            Dictionary with created and failed associations
+        """
+        created = []
+        failed = []
+        
+        for plug_data in plugs_data:
+            try:
+                plug_id = plug_data["plug_id"]
+                
+                # Verify plug ownership
+                plug = await self.plug_service.get_user_plug(user_id, plug_id)
+                if not plug:
+                    failed.append({
+                        "plug_id": str(plug_id),
+                        "error": "Plug not found or not owned by user",
+                        "error_code": "PLUG_NOT_FOUND"
+                    })
+                    continue
+                
+                # Check if association already exists
+                existing = await self.plug_repo.get_event_plug_by_ids(event_id, plug_id)
+                if existing:
+                    failed.append({
+                        "plug_id": str(plug_id),
+                        "error": "Plug is already associated with this event",
+                        "error_code": "PLUG_ALREADY_ASSOCIATED"
+                    })
+                    continue
+                
+                # Prepare association data
+                assoc_dict = {
+                    "notes": plug_data.get("notes"),
+                    "priority": plug_data.get("priority")
+                }
+                
+                # Add plug to event
+                event_plug = await self.plug_repo.add_plug_to_event(
+                    event_id=event_id,
+                    plug_id=plug_id,
+                    association_data=assoc_dict
+                )
+                
+                created.append(event_plug)
+                logger.info(f"Added plug {plug_id} to event {event_id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to add plug {plug_data.get('plug_id')} to event {event_id}: {e}")
+                failed.append({
+                    "plug_id": str(plug_data.get("plug_id", "unknown")),
+                    "error": str(e),
+                    "error_code": "ADD_PLUG_FAILED"
+                })
+        
+        return {
+            "created": created,
+            "failed": failed,
+            "total_requested": len(plugs_data),
+            "total_created": len(created),
+            "total_failed": len(failed)
+        }
+
 
 
 

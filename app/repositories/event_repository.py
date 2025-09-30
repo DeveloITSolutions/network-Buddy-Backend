@@ -661,3 +661,31 @@ class EventPlugRepository(BaseRepository[EventPlug]):
                 details={"event_id": str(event_id), "plug_id": str(plug_id), "error": str(e)}
             )
 
+    async def get_event_plug_by_ids(self, event_id: UUID, plug_id: UUID) -> Optional[EventPlug]:
+        """
+        Get event-plug association by event and plug IDs.
+        
+        Args:
+            event_id: Event ID
+            plug_id: Plug ID
+            
+        Returns:
+            Event-plug association if found, None otherwise
+        """
+        try:
+            association = await self.find_by({
+                "event_id": event_id,
+                "plug_id": plug_id,
+                "is_deleted": False
+            }, limit=1)
+            
+            return association[0] if association else None
+            
+        except Exception as e:
+            logger.error(f"Error getting event-plug association: {e}")
+            raise DatabaseError(
+                "Failed to get event-plug association",
+                error_code="GET_EVENT_PLUG_ERROR",
+                details={"event_id": str(event_id), "plug_id": str(plug_id), "error": str(e)}
+            )
+

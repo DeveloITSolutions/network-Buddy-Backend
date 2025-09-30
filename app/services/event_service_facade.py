@@ -278,3 +278,12 @@ class EventServiceFacade:
     ) -> bool:
         """Remove a plug from an event."""
         return await self.plug_service.remove_plug_from_event(user_id, event_id, plug_id)
+
+    async def add_multiple_plugs_to_event(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        plugs_data: List[dict]
+    ) -> dict:
+        """Add multiple plugs to an event in batch."""
+        return await self.plug_service.add_multiple_plugs_to_event(user_id, event_id, plugs_data)

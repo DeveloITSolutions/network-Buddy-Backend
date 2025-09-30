@@ -315,6 +315,37 @@ class EventPlugResponse(EventPlugBase):
         from_attributes = True
 
 
+class EventPlugBatchItem(EventPlugBase):
+    """Schema for individual plug in batch operations."""
+    
+    plug_id: UUID = Field(..., description="Plug ID to associate with event")
+
+
+class EventPlugBatchCreate(BaseModel):
+    """Schema for creating multiple event-plug associations."""
+    
+    plugs: List[EventPlugBatchItem] = Field(..., min_items=1, max_items=50, description="List of plugs to associate with event")
+    
+    @field_validator('plugs')
+    @classmethod
+    def validate_unique_plug_ids(cls, v):
+        """Validate that all plug IDs are unique."""
+        plug_ids = [plug.plug_id for plug in v]
+        if len(plug_ids) != len(set(plug_ids)):
+            raise ValueError('Duplicate plug IDs are not allowed')
+        return v
+
+
+class EventPlugBatchResponse(BaseModel):
+    """Schema for batch event-plug association response."""
+    
+    created: List[EventPlugResponse] = Field(..., description="Successfully created associations")
+    failed: List[dict] = Field(..., description="Failed associations with error details")
+    total_requested: int = Field(..., description="Total plugs requested")
+    total_created: int = Field(..., description="Total plugs successfully created")
+    total_failed: int = Field(..., description="Total plugs that failed to create")
+
+
 # Filter schemas
 class EventFilters(BaseModel):
     """Schema for event filtering."""
