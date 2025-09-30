@@ -23,60 +23,6 @@ def get_event_plug_media_service(db: DatabaseSession) -> EventPlugMediaService:
 
 # Simple endpoints for file upload and retrieval
 
-@router.post("/{event_id}/plugs/{plug_id}/media/upload", response_model=EventPlugMediaResponse, status_code=status.HTTP_201_CREATED)
-async def upload_plug_media_to_s3(
-    event_id: UUID,
-    plug_id: UUID,
-    current_user: CurrentActiveUser,
-    file: UploadFile = File(..., description="Media file to upload to S3"),
-    media_category: str = Form(..., description="Media category: 'snap' or 'voice'"),
-    service: EventPlugMediaService = Depends(get_event_plug_media_service)
-):
-    """
-    Upload a media file (snap or voice) to S3 for a specific plug within an event.
-    
-    - Requires JWT authentication
-    - User can only add media to their own events and plugs
-    - Files are stored in S3 with organized paths
-    - Supports images (snaps) and audio files (voice recordings)
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        
-        # Create upload data
-        upload_data = EventPlugMediaUpload(media_category=media_category)
-        
-        # Read file content
-        file_content = await file.read()
-        
-        # Check file size (100MB max)
-        max_file_size = 100 * 1024 * 1024
-        if len(file_content) > max_file_size:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File size exceeds maximum allowed size"
-            )
-        
-        # Upload file to S3 and create media record
-        media = await service.upload_plug_media_file(
-            user_id=user_id,
-            event_id=event_id,
-            plug_id=plug_id,
-            file_obj=file_content,
-            filename=file.filename or "unknown_file",
-            upload_data=upload_data
-        )
-        
-        return EventPlugMediaResponse.model_validate(media)
-    except ValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-
 @router.post("/{event_id}/plugs/{plug_id}/media/upload-multiple", response_model=List[EventPlugMediaResponse], status_code=status.HTTP_201_CREATED)
 async def upload_multiple_plug_media_to_s3(
     event_id: UUID,

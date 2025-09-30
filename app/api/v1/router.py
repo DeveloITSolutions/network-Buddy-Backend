@@ -24,11 +24,11 @@ from . import (
 router = APIRouter()
 
 # Include endpoint routers
-router.include_router(auth.router, prefix="/auth")
+router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 router.include_router(health.router, prefix="/health", tags=["Health"])
 router.include_router(users.router, prefix="/users", tags=["Users"])
 router.include_router(plugs.router, prefix="/plugs", tags=["Plugs"])
-router.include_router(events.router, prefix="/events", tags=["Events"])
+router.include_router(events.router, prefix="/events")  # Tags defined per endpoint for better organization
 router.include_router(event_plug_media.router, prefix="/events", tags=["Event Plug Media"])
 # router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])  # Removed
 

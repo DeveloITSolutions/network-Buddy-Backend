@@ -6,12 +6,11 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile, Form
-from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.dependencies import DatabaseSession, CurrentActiveUser
 from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
 from app.schemas.event import (
-    EventCreate, EventUpdate, EventResponse, EventListResponse, EventStats,
+    EventCreate, EventUpdate, EventResponse, EventListResponse,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
     EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse,
@@ -23,7 +22,8 @@ from app.services.file_upload_service import FileUploadService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Events"])
+# Main router for all event-related endpoints
+router = APIRouter()
 
 
 def get_event_service(db: DatabaseSession) -> EventService:
@@ -41,8 +41,12 @@ def get_event_media_service(db: DatabaseSession) -> EventMediaService:
     return EventMediaService(db)
 
 
-# Event Management Endpoints
-@router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
+# ============================================================================
+# EVENT MANAGEMENT ENDPOINTS
+# Core CRUD operations for events
+# ============================================================================
+
+@router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED, tags=["Events - Core"])
 async def create_event(
     event_data: EventCreate,
     current_user: CurrentActiveUser,
@@ -68,7 +72,7 @@ async def create_event(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-@router.put("/{event_id}", response_model=EventResponse)
+@router.put("/{event_id}", response_model=EventResponse, tags=["Events - Core"])
 async def update_event(
     event_id: UUID,
     event_data: EventUpdate,
@@ -100,7 +104,7 @@ async def update_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Events - Core"])
 async def delete_event(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -125,7 +129,7 @@ async def delete_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}", response_model=EventResponse)
+@router.get("/{event_id}", response_model=EventResponse, tags=["Events - Core"])
 async def get_event(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -152,7 +156,7 @@ async def get_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/", response_model=EventListResponse)
+@router.get("/", response_model=EventListResponse, tags=["Events - Core"])
 async def list_events(
     current_user: CurrentActiveUser,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -210,28 +214,13 @@ async def list_events(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-@router.get("/stats", response_model=EventStats)
-async def get_event_stats(
-    current_user: CurrentActiveUser,
-    service: EventService = Depends(get_event_service)
-):
-    """
-    Get statistics about authenticated user's events.
-    
-    - Requires JWT authentication
-    - Returns statistics for the user's own events only
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        stats = await service.get_event_stats(user_id)
-        return stats
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
+# ============================================================================
+# DEEDS MODULE - AGENDA ENDPOINTS
+# Event agenda/itinerary management
+# ============================================================================
 
-# Agenda Endpoints (Deeds Module)
-@router.post("/{event_id}/agenda", response_model=EventAgendaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{event_id}/agenda", response_model=EventAgendaResponse, status_code=status.HTTP_201_CREATED, tags=["Deeds - Agenda"])
 async def create_agenda_item(
     event_id: UUID,
     agenda_data: EventAgendaCreate,
@@ -260,7 +249,7 @@ async def create_agenda_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}/agenda/days")
+@router.get("/{event_id}/agenda/days", tags=["Deeds - Agenda"])
 async def get_event_agenda_days(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -287,7 +276,7 @@ async def get_event_agenda_days(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}/agenda", response_model=List[EventAgendaResponse])
+@router.get("/{event_id}/agenda", response_model=List[EventAgendaResponse], tags=["Deeds - Agenda"])
 async def get_event_agenda(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -316,7 +305,7 @@ async def get_event_agenda(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{event_id}/agenda/{agenda_id}", response_model=EventAgendaResponse)
+@router.put("/{event_id}/agenda/{agenda_id}", response_model=EventAgendaResponse, tags=["Deeds - Agenda"])
 async def update_agenda_item(
     event_id: UUID,
     agenda_id: UUID,
@@ -349,7 +338,7 @@ async def update_agenda_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{event_id}/agenda/{agenda_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{event_id}/agenda/{agenda_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Deeds - Agenda"])
 async def delete_agenda_item(
     event_id: UUID,
     agenda_id: UUID,
@@ -379,8 +368,12 @@ async def delete_agenda_item(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-# Expense Endpoints (Deeds Module)
-@router.post("/{event_id}/expenses", response_model=EventExpenseResponse, status_code=status.HTTP_201_CREATED)
+# ============================================================================
+# DEEDS MODULE - EXPENSE ENDPOINTS
+# Event budget and expense tracking
+# ============================================================================
+
+@router.post("/{event_id}/expenses", response_model=EventExpenseResponse, status_code=status.HTTP_201_CREATED, tags=["Deeds - Expenses"])
 async def create_expense(
     event_id: UUID,
     expense_data: EventExpenseCreate,
@@ -409,7 +402,7 @@ async def create_expense(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}/expenses", response_model=List[EventExpenseResponse])
+@router.get("/{event_id}/expenses", response_model=List[EventExpenseResponse], tags=["Deeds - Expenses"])
 async def get_event_expenses(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -438,8 +431,12 @@ async def get_event_expenses(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-# Media Endpoints (Zone Module)
-@router.post("/{event_id}/media")
+# ============================================================================
+# ZONE MODULE - MEDIA ENDPOINTS
+# Event media management (photos, videos, documents)
+# ============================================================================
+
+@router.post("/{event_id}/media", tags=["Zone - Media"])
 async def upload_media_to_s3(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -569,37 +566,8 @@ async def upload_media_to_s3(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/{event_id}/media/json", response_model=EventMediaResponse, status_code=status.HTTP_201_CREATED)
-async def create_media_json(
-    event_id: UUID,
-    media_data: EventMediaCreate,
-    current_user: CurrentActiveUser,
-    service: EventService = Depends(get_event_service)
-):
-    """
-    Create a new media item for an event using JSON (for URLs).
-    
-    - Requires JWT authentication
-    - User can only add media to their own events
-    - Use this endpoint when you have a file URL (e.g., from external storage)
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        
-        # Create media through service
-        media = await service.create_media(user_id, event_id, media_data)
-        
-        return EventMediaResponse.model_validate(media)
-    except ValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-
-@router.get("/{event_id}/media", response_model=List[EventMediaResponse])
+@router.get("/{event_id}/media", response_model=List[EventMediaResponse], tags=["Zone - Media"])
 async def get_event_media(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -629,7 +597,7 @@ async def get_event_media(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{event_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{event_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Zone - Media"])
 async def delete_media(
     event_id: UUID,
     media_id: UUID,
@@ -660,87 +628,17 @@ async def delete_media(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
-@router.get("/{event_id}/media/{media_id}/download")
-async def download_media_file(
-    event_id: UUID,
-    media_id: UUID,
-    current_user: CurrentActiveUser,
-    media_service: EventMediaService = Depends(get_event_media_service)
-):
-    """
-    Download a media file from S3.
-    
-    - Requires JWT authentication
-    - User can only download media from their own events
-    - Returns the file content with appropriate headers
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        
-        # Download file from S3
-        file_content, filename, content_type = await media_service.download_media_file(
-            user_id, event_id, media_id
-        )
-        
-        # Return file response
-        return FileResponse(
-            path=None,  # We'll provide content directly
-            media_type=content_type,
-            filename=filename,
-            content=file_content
-        )
-        
-    except ValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-
-
-@router.get("/{event_id}/media/{media_id}/stream")
-async def stream_media_file(
-    event_id: UUID,
-    media_id: UUID,
-    current_user: CurrentActiveUser,
-    media_service: EventMediaService = Depends(get_event_media_service)
-):
-    """
-    Stream a media file from S3.
-    
-    - Requires JWT authentication
-    - User can only stream media from their own events
-    - Returns a streaming response for large files
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        
-        # Get file stream from S3
-        stream, filename, content_type = await media_service.get_media_file_stream(
-            user_id, event_id, media_id
-        )
-        
-        # Create streaming response
-        return StreamingResponse(
-            stream,
-            media_type=content_type,
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-        
-    except ValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
 
 
-# Event-Plug Association Endpoints
-@router.post("/{event_id}/plugs", response_model=EventPlugResponse, status_code=status.HTTP_201_CREATED)
+
+# ============================================================================
+# EVENT-PLUG ASSOCIATION ENDPOINTS
+# Manage connections between events and plugs (contacts/targets)
+# ============================================================================
+
+@router.post("/{event_id}/plugs", response_model=EventPlugResponse, status_code=status.HTTP_201_CREATED, tags=["Event Plugs"])
 async def add_plug_to_event(
     event_id: UUID,
     plug_data: EventPlugCreate,
@@ -769,7 +667,7 @@ async def add_plug_to_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}/plugs", response_model=EventPlugListResponse)
+@router.get("/{event_id}/plugs", response_model=EventPlugListResponse, tags=["Event Plugs"])
 async def get_event_plugs(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -811,7 +709,7 @@ async def get_event_plugs(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.delete("/{event_id}/plugs/{plug_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{event_id}/plugs/{plug_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Event Plugs"])
 async def remove_plug_from_event(
     event_id: UUID,
     plug_id: UUID,
@@ -837,7 +735,7 @@ async def remove_plug_from_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/{event_id}/plugs/batch", response_model=EventPlugBatchResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{event_id}/plugs/batch", response_model=EventPlugBatchResponse, status_code=status.HTTP_201_CREATED, tags=["Event Plugs"])
 async def add_multiple_plugs_to_event(
     event_id: UUID,
     batch_data: EventPlugBatchCreate,

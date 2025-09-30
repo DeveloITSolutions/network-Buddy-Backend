@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.dependencies import DatabaseSession, CurrentActiveUser
 from app.core.exceptions import ValidationError, BusinessLogicError, NotFoundError
-from app.schemas.plug import PlugResponse, PlugListResponse, PlugStats
+from app.schemas.plug import PlugResponse, PlugListResponse
 from app.services.plug_service import PlugService
 
 router = APIRouter(tags=["Plugs"])
@@ -175,26 +175,6 @@ async def list_plugs(
         )
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except BusinessLogicError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-
-
-@router.get("/stats", response_model=PlugStats)
-async def get_plug_stats(
-    current_user: CurrentActiveUser,
-    service: PlugService = Depends(get_plug_service)
-):
-    """
-    Get statistics about authenticated user's plugs.
-    
-    - Requires JWT authentication
-    - Returns statistics for the user's own plugs only
-    """
-    try:
-        # Extract user_id from JWT token
-        user_id = UUID(current_user["user_id"])
-        stats = await service.get_plug_stats(user_id)
-        return stats
     except BusinessLogicError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
