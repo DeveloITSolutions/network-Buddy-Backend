@@ -14,7 +14,7 @@ from app.schemas.event import (
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
     EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload,
-    EventPlugCreate, EventPlugResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
+    EventPlugCreate, EventPlugResponse, EventPlugListResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
 from app.services.event_media_service import EventMediaService
@@ -700,7 +700,7 @@ async def add_plug_to_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.get("/{event_id}/plugs", response_model=List[EventPlugResponse])
+@router.get("/{event_id}/plugs", response_model=EventPlugListResponse)
 async def get_event_plugs(
     event_id: UUID,
     current_user: CurrentActiveUser,
@@ -714,13 +714,26 @@ async def get_event_plugs(
     
     - Requires JWT authentication
     - User can only access their own events
+    - Returns list with counts of targets and contacts
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         event_plugs, total = await service.get_event_plugs(user_id, event_id, plug_type, skip, limit)
         
-        return [EventPlugResponse.model_validate(event_plug) for event_plug in event_plugs]
+        # Calculate counts for targets and contacts
+        from app.models.plug import PlugType
+        target_count = sum(1 for ep in event_plugs if ep.plug and ep.plug.plug_type == PlugType.TARGET)
+        contact_count = sum(1 for ep in event_plugs if ep.plug and ep.plug.plug_type == PlugType.CONTACT)
+        
+        return EventPlugListResponse(
+            items=[EventPlugResponse.model_validate(event_plug) for event_plug in event_plugs],
+            total=total,
+            counts={
+                "targets": target_count,
+                "contacts": contact_count
+            }
+        )
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:

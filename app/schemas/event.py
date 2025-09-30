@@ -129,6 +129,9 @@ class EventResponse(EventBase):
     google_maps_url: Optional[str]
     display_address: str
     
+    # Plug counts
+    plug_counts: dict = Field(default_factory=dict, description="Count of plugs by type (targets/contacts)")
+    
     class Config:
         from_attributes = True
 
@@ -313,6 +316,14 @@ class EventPlugResponse(EventPlugBase):
     
     class Config:
         from_attributes = True
+
+
+class EventPlugListResponse(BaseModel):
+    """Schema for event-plug list response with counts."""
+    
+    items: List[EventPlugResponse]
+    total: int
+    counts: Dict[str, int] = Field(..., description="Count of plugs by type (targets/contacts)")
 
 
 class EventPlugBatchItem(EventPlugBase):

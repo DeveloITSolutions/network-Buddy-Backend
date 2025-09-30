@@ -291,6 +291,26 @@ class Event(BaseModel):
     def display_address(self) -> str:
         """Get formatted address for display."""
         return self.get_display_address()
+    
+    @property
+    def plug_counts(self) -> dict:
+        """Get count of plugs by type (targets and contacts)."""
+        from app.models.plug import PlugType
+        
+        target_count = 0
+        contact_count = 0
+        
+        for event_plug in self.event_plugs:
+            if not event_plug.is_deleted and event_plug.plug and not event_plug.plug.is_deleted:
+                if event_plug.plug.plug_type == PlugType.TARGET:
+                    target_count += 1
+                elif event_plug.plug.plug_type == PlugType.CONTACT:
+                    contact_count += 1
+        
+        return {
+            "targets": target_count,
+            "contacts": contact_count
+        }
 
 
 class EventAgenda(BaseModel):
