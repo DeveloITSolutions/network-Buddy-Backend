@@ -13,7 +13,7 @@ from app.schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
-    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse,
+    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse, EventMediaGroupedResponse,
     EventPlugCreate, EventPlugResponse, EventPlugListResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
@@ -441,8 +441,8 @@ async def upload_media_to_s3(
     event_id: UUID,
     current_user: CurrentActiveUser,
     files: List[UploadFile] = File(..., description="Media file(s) to upload to S3. Can upload single or multiple files."),
-    titles: Optional[str] = Form(None, description="Pipe-separated titles for each file (e.g., 'Title1|Title2|Title3')"),
-    descriptions: Optional[str] = Form(None, description="Pipe-separated descriptions for each file"),
+    title: Optional[str] = Form(None, description="Zone/Batch title (applied to all files)"),
+    description: Optional[str] = Form(None, description="Zone/Batch description (applied to all files)"),
     tags: Optional[str] = Form(None, description="Comma-separated tags (applied to all files)"),
     media_service: EventMediaService = Depends(get_event_media_service)
 ):
@@ -452,13 +452,12 @@ async def upload_media_to_s3(
     - Requires JWT authentication
     - User can only add media to their own events
     - Accepts multipart/form-data for file uploads
-    - Files are stored in S3, only metadata is stored in database
-    - Supports images, videos, documents, and audio files
-    - **Single File**: Returns EventMediaResponse (200)
-    - **Multiple Files**: Returns EventMediaBatchUploadResponse with successful/failed uploads (200)
+    - Files uploaded together are grouped as one "zone" with shared metadata
+    - **Single File**: Returns EventMediaResponse
+    - **Multiple Files**: Returns EventMediaBatchUploadResponse with batch_id
     
-    **Note**: For multiple files with individual titles/descriptions, separate them with pipe (|) character.
-    If titles/descriptions count doesn't match files count, remaining files will have no title/description.
+    **Simplified Upload**: All files in a single upload share the same title, description, and tags.
+    This creates a logical grouping (zone) that can be retrieved together.
     """
     try:
         # Extract user_id from JWT token
@@ -469,19 +468,17 @@ async def upload_media_to_s3(
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
         
-        # Parse titles and descriptions (pipe-separated)
-        title_list = []
-        if titles:
-            title_list = [t.strip() for t in titles.split("|")]
-        
-        description_list = []
-        if descriptions:
-            description_list = [d.strip() for d in descriptions.split("|")]
+        # Create shared metadata for all files
+        upload_metadata = EventMediaUpload(
+            title=title,
+            description=description,
+            tags=tag_list if tag_list else None
+        )
         
         # File size limit
         max_file_size = 100 * 1024 * 1024  # 100MB per file
         
-        # Single file upload - maintain backward compatibility
+        # Single file upload
         if len(files) == 1:
             file = files[0]
             file_content = await file.read()
@@ -492,23 +489,17 @@ async def upload_media_to_s3(
                     detail=f"File size ({len(file_content)} bytes) exceeds maximum allowed size ({max_file_size} bytes)"
                 )
             
-            upload_data = EventMediaUpload(
-                title=title_list[0] if title_list else None,
-                description=description_list[0] if description_list else None,
-                tags=tag_list if tag_list else None
-            )
-            
             media = await media_service.upload_media_file(
                 user_id=user_id,
                 event_id=event_id,
                 file_obj=file_content,
                 filename=file.filename or "unknown_file",
-                upload_data=upload_data
+                upload_data=upload_metadata
             )
             
             return EventMediaResponse.model_validate(media)
         
-        # Multiple files upload - batch processing
+        # Multiple files upload - batch processing with shared metadata
         else:
             files_data = []
             
@@ -521,27 +512,17 @@ async def upload_media_to_s3(
                     logger.warning(f"File {file.filename} ({len(file_content)} bytes) exceeds max size, skipping")
                     continue
                 
-                # Get title and description for this file
-                file_title = title_list[idx] if idx < len(title_list) else None
-                file_description = description_list[idx] if idx < len(description_list) else None
-                
-                upload_data = EventMediaUpload(
-                    title=file_title,
-                    description=file_description,
-                    tags=tag_list if tag_list else None
-                )
-                
                 files_data.append((
                     file_content,
-                    file.filename or f"unknown_file_{idx}",
-                    upload_data
+                    file.filename or f"unknown_file_{idx}"
                 ))
             
-            # Batch upload
+            # Batch upload with shared metadata
             result = await media_service.batch_upload_media_files(
                 user_id=user_id,
                 event_id=event_id,
-                files_data=files_data
+                files_data=files_data,
+                upload_metadata=upload_metadata
             )
             
             # Convert successful uploads to response format
@@ -555,7 +536,8 @@ async def upload_media_to_s3(
                 failed=result["failed"],
                 total_requested=result["total_requested"],
                 total_successful=result["total_successful"],
-                total_failed=result["total_failed"]
+                total_failed=result["total_failed"],
+                batch_id=result.get("batch_id")
             )
             
     except ValidationError as e:
@@ -565,6 +547,35 @@ async def upload_media_to_s3(
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
+
+@router.get("/{event_id}/media/grouped", response_model=EventMediaGroupedResponse, tags=["Zone - Media"])
+async def get_event_media_grouped(
+    event_id: UUID,
+    current_user: CurrentActiveUser,
+    file_type: Optional[str] = Query(None, description="Filter by file type"),
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Get media grouped by zones/batches.
+    
+    - Requires JWT authentication
+    - User can only access their own events
+    - Returns media grouped by batch_id
+    - Each zone contains all files uploaded together with shared metadata
+    - Perfect for displaying organized media galleries
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        result = await media_service.get_event_media_grouped(user_id, event_id, file_type)
+        
+        return EventMediaGroupedResponse(**result)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get("/{event_id}/media", response_model=List[EventMediaResponse], tags=["Zone - Media"])

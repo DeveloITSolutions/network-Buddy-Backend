@@ -431,31 +431,44 @@ class EventMediaService(EventBaseService):
         self,
         user_id: UUID,
         event_id: UUID,
-        files_data: List[Tuple[Union[Any, bytes], str, EventMediaUpload]]
+        files_data: List[Tuple[Union[Any, bytes], str]],
+        upload_metadata: EventMediaUpload
     ) -> Dict[str, Any]:
         """
-        Upload multiple files to S3 and create media records in batch.
+        Upload multiple files to S3 and create media records in batch with shared metadata.
         
         Args:
             user_id: Owner user ID
             event_id: Event ID
-            files_data: List of tuples (file_obj, filename, upload_data)
+            files_data: List of tuples (file_obj, filename)
+            upload_metadata: Shared metadata (title, description, tags) for the entire batch
             
         Returns:
-            Dictionary with successful uploads, failed uploads, and counts
+            Dictionary with successful uploads, failed uploads, counts, and batch_id
         """
+        from uuid import uuid4
+        
+        # Generate a unique batch_id for this upload session
+        batch_id = uuid4()
+        
         successful = []
         failed = []
         
-        for idx, (file_obj, filename, upload_data) in enumerate(files_data):
+        # Convert metadata once for all files
+        tags_str = self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
+        
+        for idx, (file_obj, filename) in enumerate(files_data):
             try:
-                # Upload individual file
-                media = await self.upload_media_file(
+                # Upload individual file with shared metadata and batch_id
+                media = await self._upload_file_with_batch_id(
                     user_id=user_id,
                     event_id=event_id,
                     file_obj=file_obj,
                     filename=filename,
-                    upload_data=upload_data
+                    batch_id=batch_id,
+                    title=upload_metadata.title,
+                    description=upload_metadata.description,
+                    tags_str=tags_str
                 )
                 successful.append(media)
                 logger.info(f"Batch upload: Successfully uploaded file {idx + 1}/{len(files_data)}: {filename}")
@@ -475,7 +488,157 @@ class EventMediaService(EventBaseService):
             "failed": failed,
             "total_requested": len(files_data),
             "total_successful": len(successful),
-            "total_failed": len(failed)
+            "total_failed": len(failed),
+            "batch_id": batch_id if successful else None
+        }
+    
+    async def _upload_file_with_batch_id(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        file_obj: Union[Any, bytes],
+        filename: str,
+        batch_id: UUID,
+        title: Optional[str],
+        description: Optional[str],
+        tags_str: str
+    ) -> EventMedia:
+        """Internal method to upload a file with batch_id."""
+        # Get file size
+        if isinstance(file_obj, bytes):
+            file_size = len(file_obj)
+        else:
+            try:
+                file_obj.seek(0, 2)
+                file_size = file_obj.tell()
+                file_obj.seek(0)
+            except (OSError, ValueError):
+                file_size = 0
+        
+        # Determine content type
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(filename)
+        file_type = content_type or 'application/octet-stream'
+        if len(file_type) > 32:
+            file_type = file_type[:32]
+        
+        # Generate S3 key
+        s3_key = s3_service()._generate_s3_key(
+            prefix=f"events/{event_id}/media",
+            filename=filename
+        )
+        
+        if len(s3_key) > 512:
+            raise BusinessLogicError(
+                "Generated S3 key exceeds database storage limit",
+                error_code="S3_KEY_TOO_LONG"
+            )
+        
+        # Upload to S3
+        file_url = s3_service().upload_file(
+            file_obj=file_obj,
+            key=s3_key,
+            metadata={
+                'event_id': str(event_id),
+                'user_id': str(user_id),
+                'batch_id': str(batch_id),
+                'original_filename': filename
+            }
+        )
+        
+        if len(file_url) > 512:
+            raise BusinessLogicError(
+                "Generated file URL exceeds database storage limit",
+                error_code="FILE_URL_TOO_LONG"
+            )
+        
+        # Create media record with batch_id
+        media_dict = {
+            "event_id": event_id,
+            "batch_id": batch_id,
+            "title": title[:256] if title and len(title) > 256 else title,
+            "description": description,
+            "file_url": file_url,
+            "s3_key": s3_key,
+            "file_type": file_type,
+            "file_size": file_size,
+            "tags": tags_str
+        }
+        
+        try:
+            media = await self.media_repo.create(media_dict)
+            return media
+        except Exception as db_error:
+            # Cleanup S3 on database error
+            try:
+                s3_service().delete_file(s3_key)
+            except Exception:
+                pass
+            raise db_error
+
+    @handle_service_errors("get grouped media", "GROUPED_MEDIA_RETRIEVAL_FAILED")
+    @require_event_ownership
+    async def get_event_media_grouped(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        file_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get media grouped by batch_id (zones).
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            file_type: Filter by file type (optional)
+            
+        Returns:
+            Dictionary with zones, each containing grouped media files
+        """
+        from collections import defaultdict
+        
+        # Get all media for the event
+        media_list, _ = await self.media_repo.get_event_media(
+            event_id=event_id,
+            file_type=file_type,
+            skip=0,
+            limit=10000  # Get all
+        )
+        
+        # Group by batch_id
+        zones_dict = defaultdict(list)
+        for media in media_list:
+            batch_key = str(media.batch_id) if media.batch_id else "ungrouped"
+            zones_dict[batch_key].append(media)
+        
+        # Build zones list
+        zones = []
+        for batch_id_str, media_files in zones_dict.items():
+            if not media_files:
+                continue
+            
+            # Use first media item's metadata as zone metadata
+            first_media = media_files[0]
+            
+            zone = {
+                "zone_id": first_media.batch_id if first_media.batch_id else first_media.id,
+                "title": first_media.title,
+                "description": first_media.description,
+                "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
+                "media_files": media_files,
+                "file_count": len(media_files),
+                "created_at": first_media.created_at,
+                "updated_at": max(m.updated_at for m in media_files)
+            }
+            zones.append(zone)
+        
+        # Sort zones by created_at (newest first)
+        zones.sort(key=lambda x: x["created_at"], reverse=True)
+        
+        return {
+            "zones": zones,
+            "total_zones": len(zones),
+            "total_files": len(media_list)
         }
 
     def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:

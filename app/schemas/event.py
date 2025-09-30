@@ -248,11 +248,11 @@ class EventMediaCreate(EventMediaBase):
 
 
 class EventMediaUpload(BaseModel):
-    """Schema for media file upload."""
+    """Schema for media file upload - simplified for batch uploads."""
     
-    title: Optional[str] = Field(None, max_length=256, description="Media title")
-    description: Optional[str] = Field(None, description="Media description")
-    tags: Optional[List[str]] = Field(None, description="Media tags")
+    title: Optional[str] = Field(None, max_length=256, description="Zone/Batch title (applied to all files)")
+    description: Optional[str] = Field(None, description="Zone/Batch description (applied to all files)")
+    tags: Optional[List[str]] = Field(None, description="Zone/Batch tags (applied to all files)")
 
 
 class EventMediaUpdate(BaseModel):
@@ -272,6 +272,7 @@ class EventMediaResponse(EventMediaBase):
     
     id: UUID
     event_id: UUID
+    batch_id: Optional[UUID] = Field(None, description="Batch/Zone ID for grouped media")
     created_at: datetime
     updated_at: datetime
     
@@ -297,6 +298,28 @@ class EventMediaBatchUploadResponse(BaseModel):
     total_requested: int = Field(..., description="Total number of files in the request")
     total_successful: int = Field(..., description="Number of successful uploads")
     total_failed: int = Field(..., description="Number of failed uploads")
+    batch_id: Optional[UUID] = Field(None, description="Batch ID for all successfully uploaded files")
+
+
+class MediaZone(BaseModel):
+    """Schema for a zone/batch of media files."""
+    
+    zone_id: UUID = Field(..., description="Unique identifier for this zone/batch")
+    title: Optional[str] = Field(None, description="Zone title")
+    description: Optional[str] = Field(None, description="Zone description")
+    tags: List[str] = Field(default_factory=list, description="Zone tags")
+    media_files: List[EventMediaResponse] = Field(..., description="All media files in this zone")
+    file_count: int = Field(..., description="Number of files in this zone")
+    created_at: datetime = Field(..., description="When this zone was created")
+    updated_at: datetime = Field(..., description="When this zone was last updated")
+
+
+class EventMediaGroupedResponse(BaseModel):
+    """Schema for grouped media response."""
+    
+    zones: List[MediaZone] = Field(..., description="Media grouped by zones/batches")
+    total_zones: int = Field(..., description="Total number of zones")
+    total_files: int = Field(..., description="Total number of media files across all zones")
 
 
 # Event-Plug association schemas

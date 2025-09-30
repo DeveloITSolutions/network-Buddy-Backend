@@ -484,6 +484,14 @@ class EventMedia(BaseModel):
         nullable=True
     )
     
+    # Batch/Zone grouping - groups media uploaded together
+    batch_id: Mapped[Optional[UUID]] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        nullable=True,
+        index=True,
+        comment="Groups media files uploaded together as a zone/batch"
+    )
+    
     # Event relationship
     event_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
