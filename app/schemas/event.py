@@ -2,11 +2,14 @@
 Pydantic schemas for event operations.
 """
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 from typing import Dict, Any
+
+if TYPE_CHECKING:
+    from app.schemas.plug import PlugResponse
 
 
 # Base schemas
@@ -314,6 +317,9 @@ class EventPlugResponse(EventPlugBase):
     created_at: datetime
     updated_at: datetime
     
+    # Include plug details
+    plug: Optional["PlugResponse"] = Field(None, description="Plug details")
+    
     class Config:
         from_attributes = True
 
@@ -413,3 +419,8 @@ class AgendaImportResponse(BaseModel):
     success: bool
     message: str
     imported_items: Optional[List[EventAgendaResponse]] = None
+
+
+# Resolve forward references for EventPlugResponse
+from app.schemas.plug import PlugResponse
+EventPlugResponse.model_rebuild()

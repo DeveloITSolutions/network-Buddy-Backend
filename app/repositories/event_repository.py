@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import and_, desc, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import DatabaseError, ValidationError
 from app.models.event import Event, EventAgenda, EventExpense, EventMedia, EventPlug
@@ -600,9 +600,9 @@ class EventPlugRepository(BaseRepository[EventPlug]):
             Tuple of (event-plug associations list, total count)
         """
         try:
-            # Build query with join to plugs table
-            query = self.db.query(self.model).join(
-                self.model.plug
+            # Build query with eager loading of plug relationship
+            query = self.db.query(self.model).options(
+                joinedload(self.model.plug)
             ).filter(
                 and_(
                     self.model.event_id == event_id,
@@ -616,7 +616,7 @@ class EventPlugRepository(BaseRepository[EventPlug]):
             # Get total count
             total_count = query.count()
             
-            # Get paginated results
+            # Get paginated results with plug details eagerly loaded
             results = query.order_by(desc(self.model.created_at)).offset(skip).limit(limit).all()
             
             return results, total_count
