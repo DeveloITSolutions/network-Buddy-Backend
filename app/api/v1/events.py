@@ -1,6 +1,7 @@
 """
 API endpoints for event management.
 """
+import logging
 from typing import List, Optional
 from uuid import UUID
 
@@ -13,12 +14,14 @@ from app.schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse, EventStats,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
-    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload,
+    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse,
     EventPlugCreate, EventPlugResponse, EventPlugListResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
 from app.services.event_media_service import EventMediaService
 from app.services.file_upload_service import FileUploadService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Events"])
 
@@ -436,62 +439,128 @@ async def get_event_expenses(
 
 
 # Media Endpoints (Zone Module)
-@router.post("/{event_id}/media", response_model=EventMediaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{event_id}/media")
 async def upload_media_to_s3(
     event_id: UUID,
     current_user: CurrentActiveUser,
-    file: UploadFile = File(..., description="Media file to upload to S3"),
-    title: Optional[str] = Form(None, description="Media title"),
-    description: Optional[str] = Form(None, description="Media description"),
-    tags: Optional[str] = Form(None, description="Comma-separated tags"),
+    files: List[UploadFile] = File(..., description="Media file(s) to upload to S3. Can upload single or multiple files."),
+    titles: Optional[str] = Form(None, description="Pipe-separated titles for each file (e.g., 'Title1|Title2|Title3')"),
+    descriptions: Optional[str] = Form(None, description="Pipe-separated descriptions for each file"),
+    tags: Optional[str] = Form(None, description="Comma-separated tags (applied to all files)"),
     media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
-    Upload a media file to S3 and create a media record.
+    Upload one or more media files to S3 and create media records.
     
     - Requires JWT authentication
     - User can only add media to their own events
     - Accepts multipart/form-data for file uploads
     - Files are stored in S3, only metadata is stored in database
     - Supports images, videos, documents, and audio files
+    - **Single File**: Returns EventMediaResponse (200)
+    - **Multiple Files**: Returns EventMediaBatchUploadResponse with successful/failed uploads (200)
+    
+    **Note**: For multiple files with individual titles/descriptions, separate them with pipe (|) character.
+    If titles/descriptions count doesn't match files count, remaining files will have no title/description.
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Parse tags
+        # Parse tags (applied to all files)
         tag_list = []
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
         
-        # Create upload data
-        upload_data = EventMediaUpload(
-            title=title,
-            description=description,
-            tags=tag_list if tag_list else None
-        )
+        # Parse titles and descriptions (pipe-separated)
+        title_list = []
+        if titles:
+            title_list = [t.strip() for t in titles.split("|")]
         
-        # Read file content into memory to avoid I/O issues
-        # Limit file size to prevent memory issues (e.g., 100MB max)
-        max_file_size = 100 * 1024 * 1024  # 100MB
-        file_content = await file.read()
+        description_list = []
+        if descriptions:
+            description_list = [d.strip() for d in descriptions.split("|")]
         
-        if len(file_content) > max_file_size:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File size ({len(file_content)} bytes) exceeds maximum allowed size ({max_file_size} bytes)"
+        # File size limit
+        max_file_size = 100 * 1024 * 1024  # 100MB per file
+        
+        # Single file upload - maintain backward compatibility
+        if len(files) == 1:
+            file = files[0]
+            file_content = await file.read()
+            
+            if len(file_content) > max_file_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File size ({len(file_content)} bytes) exceeds maximum allowed size ({max_file_size} bytes)"
+                )
+            
+            upload_data = EventMediaUpload(
+                title=title_list[0] if title_list else None,
+                description=description_list[0] if description_list else None,
+                tags=tag_list if tag_list else None
             )
+            
+            media = await media_service.upload_media_file(
+                user_id=user_id,
+                event_id=event_id,
+                file_obj=file_content,
+                filename=file.filename or "unknown_file",
+                upload_data=upload_data
+            )
+            
+            return EventMediaResponse.model_validate(media)
         
-        # Upload file to S3 and create media record
-        media = await media_service.upload_media_file(
-            user_id=user_id,
-            event_id=event_id,
-            file_obj=file_content,
-            filename=file.filename or "unknown_file",
-            upload_data=upload_data
-        )
-        
-        return EventMediaResponse.model_validate(media)
+        # Multiple files upload - batch processing
+        else:
+            files_data = []
+            
+            for idx, file in enumerate(files):
+                # Read file content
+                file_content = await file.read()
+                
+                # Check file size
+                if len(file_content) > max_file_size:
+                    logger.warning(f"File {file.filename} ({len(file_content)} bytes) exceeds max size, skipping")
+                    continue
+                
+                # Get title and description for this file
+                file_title = title_list[idx] if idx < len(title_list) else None
+                file_description = description_list[idx] if idx < len(description_list) else None
+                
+                upload_data = EventMediaUpload(
+                    title=file_title,
+                    description=file_description,
+                    tags=tag_list if tag_list else None
+                )
+                
+                files_data.append((
+                    file_content,
+                    file.filename or f"unknown_file_{idx}",
+                    upload_data
+                ))
+            
+            # Batch upload
+            result = await media_service.batch_upload_media_files(
+                user_id=user_id,
+                event_id=event_id,
+                files_data=files_data
+            )
+            
+            # Convert successful uploads to response format
+            successful_responses = [
+                EventMediaResponse.model_validate(media) 
+                for media in result["successful"]
+            ]
+            
+            return EventMediaBatchUploadResponse(
+                successful=successful_responses,
+                failed=result["failed"],
+                total_requested=result["total_requested"],
+                total_successful=result["total_successful"],
+                total_failed=result["total_failed"]
+            )
+            
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:

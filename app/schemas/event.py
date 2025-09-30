@@ -289,6 +289,16 @@ class EventMediaResponse(EventMediaBase):
         from_attributes = True
 
 
+class EventMediaBatchUploadResponse(BaseModel):
+    """Schema for batch media upload response."""
+    
+    successful: List[EventMediaResponse] = Field(default_factory=list, description="Successfully uploaded media items")
+    failed: List[Dict[str, Any]] = Field(default_factory=list, description="Failed uploads with error details")
+    total_requested: int = Field(..., description="Total number of files in the request")
+    total_successful: int = Field(..., description="Number of successful uploads")
+    total_failed: int = Field(..., description="Number of failed uploads")
+
+
 # Event-Plug association schemas
 class EventPlugBase(BaseModel):
     """Base schema for event-plug association operations."""

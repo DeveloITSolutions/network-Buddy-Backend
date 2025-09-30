@@ -425,6 +425,59 @@ class EventMediaService(EventBaseService):
         
         return stream, filename, media.file_type or 'application/octet-stream'
 
+    @handle_service_errors("batch upload media files", "BATCH_MEDIA_UPLOAD_FAILED")
+    @require_event_ownership
+    async def batch_upload_media_files(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        files_data: List[Tuple[Union[Any, bytes], str, EventMediaUpload]]
+    ) -> Dict[str, Any]:
+        """
+        Upload multiple files to S3 and create media records in batch.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            files_data: List of tuples (file_obj, filename, upload_data)
+            
+        Returns:
+            Dictionary with successful uploads, failed uploads, and counts
+        """
+        successful = []
+        failed = []
+        
+        for idx, (file_obj, filename, upload_data) in enumerate(files_data):
+            try:
+                # Upload individual file
+                media = await self.upload_media_file(
+                    user_id=user_id,
+                    event_id=event_id,
+                    file_obj=file_obj,
+                    filename=filename,
+                    upload_data=upload_data
+                )
+                successful.append(media)
+                logger.info(f"Batch upload: Successfully uploaded file {idx + 1}/{len(files_data)}: {filename}")
+                
+            except Exception as e:
+                error_detail = {
+                    "filename": filename,
+                    "index": idx,
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
+                failed.append(error_detail)
+                logger.error(f"Batch upload: Failed to upload file {idx + 1}/{len(files_data)}: {filename}. Error: {e}")
+        
+        return {
+            "successful": successful,
+            "failed": failed,
+            "total_requested": len(files_data),
+            "total_successful": len(successful),
+            "total_failed": len(failed)
+        }
+
     def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convert tags list to string format for database storage.
