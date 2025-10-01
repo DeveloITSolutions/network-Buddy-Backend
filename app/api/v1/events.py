@@ -715,21 +715,34 @@ async def get_event_plugs(
     event_id: UUID,
     current_user: CurrentActiveUser,
     plug_type: Optional[str] = Query(None, description="Filter by plug type (target/contact)"),
+    network_type: Optional[str] = Query(None, description="Filter by network type (new_client, existing_client, new_partnership, etc.)"),
+    q: Optional[str] = Query(None, min_length=1, description="Search query (name, company, email, network_type)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     service: EventService = Depends(get_event_service)
 ):
     """
-    Get plugs associated with an event.
+    Get plugs associated with an event with filtering and search.
     
     - Requires JWT authentication
     - User can only access their own events
     - Returns list with counts of targets and contacts
+    - Supports filtering by plug_type and network_type
+    - Supports text search across name, company, email, network_type
+    
+    Examples:
+    - All event plugs: GET /events/{event_id}/plugs
+    - Filter contacts: ?plug_type=contact
+    - Filter by network type: ?network_type=new_client
+    - Search plugs: ?q=john
+    - Combined filters: ?plug_type=contact&network_type=existing_client&q=acme
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
-        event_plugs, total = await service.get_event_plugs(user_id, event_id, plug_type, skip, limit)
+        event_plugs, total = await service.get_event_plugs(
+            user_id, event_id, plug_type, network_type, q, skip, limit
+        )
         
         # Calculate counts for targets and contacts
         from app.models.plug import PlugType

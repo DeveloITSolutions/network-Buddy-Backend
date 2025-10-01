@@ -77,6 +77,8 @@ class EventPlugService(EventBaseService):
         user_id: UUID,
         event_id: UUID,
         plug_type: Optional[str] = None,
+        network_type: Optional[str] = None,
+        search_query: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[EventPlug], int]:
@@ -87,6 +89,8 @@ class EventPlugService(EventBaseService):
             user_id: Owner user ID
             event_id: Event ID
             plug_type: Filter by plug type (optional)
+            network_type: Filter by network type (optional)
+            search_query: Search in plug name, company, email (optional)
             skip: Number of records to skip
             limit: Maximum number of records
             
@@ -96,6 +100,8 @@ class EventPlugService(EventBaseService):
         return await self.plug_repo.get_event_plugs(
             event_id=event_id,
             plug_type=plug_type,
+            network_type=network_type,
+            search_query=search_query,
             skip=skip,
             limit=limit
         )

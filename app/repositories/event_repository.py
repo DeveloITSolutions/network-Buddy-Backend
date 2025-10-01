@@ -658,6 +658,8 @@ class EventPlugRepository(BaseRepository[EventPlug]):
         self,
         event_id: UUID,
         plug_type: Optional[str] = None,
+        network_type: Optional[str] = None,
+        search_query: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[EventPlug], int]:
@@ -667,6 +669,8 @@ class EventPlugRepository(BaseRepository[EventPlug]):
         Args:
             event_id: Event ID
             plug_type: Filter by plug type (optional)
+            network_type: Filter by network type (optional)
+            search_query: Search in plug name, company, email (optional)
             skip: Number of records to skip
             limit: Maximum number of records
             
@@ -674,6 +678,8 @@ class EventPlugRepository(BaseRepository[EventPlug]):
             Tuple of (event-plug associations list, total count)
         """
         try:
+            from app.models.plug import Plug
+            
             # Build query with eager loading of plug relationship
             query = self.db.query(self.model).options(
                 joinedload(self.model.plug)
@@ -684,8 +690,26 @@ class EventPlugRepository(BaseRepository[EventPlug]):
                 )
             )
             
+            # Filter by plug type
             if plug_type:
                 query = query.filter(self.model.plug.has(plug_type=plug_type))
+            
+            # Filter by network type
+            if network_type:
+                query = query.filter(self.model.plug.has(network_type=network_type))
+            
+            # Search query across plug fields
+            if search_query:
+                search_term = f"%{search_query}%"
+                query = query.join(self.model.plug).filter(
+                    or_(
+                        Plug.first_name.ilike(search_term),
+                        Plug.last_name.ilike(search_term),
+                        Plug.company.ilike(search_term),
+                        Plug.email.ilike(search_term),
+                        Plug.network_type.ilike(search_term)
+                    )
+                )
             
             # Get total count
             total_count = query.count()

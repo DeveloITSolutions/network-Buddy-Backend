@@ -220,11 +220,15 @@ class EventService(BaseService[Event]):
         user_id: UUID,
         event_id: UUID,
         plug_type: Optional[str] = None,
+        network_type: Optional[str] = None,
+        search_query: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[EventPlug], int]:
-        """Get plugs associated with an event."""
-        return await self.facade.get_event_plugs(user_id, event_id, plug_type, skip, limit)
+        """Get plugs associated with an event with filtering and search."""
+        return await self.facade.get_event_plugs(
+            user_id, event_id, plug_type, network_type, search_query, skip, limit
+        )
 
     async def remove_plug_from_event(
         self,
