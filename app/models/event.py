@@ -165,6 +165,13 @@ class Event(BaseModel):
         order_by="EventMedia.created_at.desc()"
     )
     
+    media_zones: Mapped[List["EventMediaZone"]] = relationship(
+        "EventMediaZone",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        order_by="EventMediaZone.created_at.desc()"
+    )
+    
     # Event-Plug associations (many-to-many)
     event_plugs: Mapped[List["EventPlug"]] = relationship(
         "EventPlug",
@@ -439,57 +446,110 @@ class EventExpense(BaseModel):
     )
 
 
-class EventMedia(BaseModel):
+class EventMediaZone(BaseModel):
     """
-    Media content for events (Zone module).
+    Zone metadata for grouped media uploads.
+    Stores title, description, and tags once for the entire zone.
     """
     
-    __tablename__ = "event_media"
+    __tablename__ = "event_media_zones"
     
-    # Media information
+    # Zone metadata - stored once per zone
     title: Mapped[Optional[str]] = mapped_column(
         String(256),
-        nullable=True
+        nullable=True,
+        comment="Zone title applied to all media in this zone"
     )
     
     description: Mapped[Optional[str]] = mapped_column(
         Text,
-        nullable=True
+        nullable=True,
+        comment="Zone description applied to all media in this zone"
     )
     
+    tags: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Comma-separated tags applied to all media in this zone"
+    )
+    
+    # Event relationship
+    event_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="media_zones")
+    media_files: Mapped[List["EventMedia"]] = relationship(
+        "EventMedia",
+        back_populates="zone",
+        foreign_keys="EventMedia.zone_id",
+        cascade="all, delete-orphan"
+    )
+    
+    def get_tags_list(self) -> List[str]:
+        """Get tags as a list."""
+        if not self.tags:
+            return []
+        return [tag.strip() for tag in self.tags.split(",") if tag.strip()]
+    
+    def set_tags_list(self, tags: List[str]) -> None:
+        """Set tags from a list."""
+        self.tags = ",".join(tags) if tags else None
+
+
+class EventMedia(BaseModel):
+    """
+    Media files for events (Zone module).
+    Individual files with only file-specific data (no duplicated metadata).
+    """
+    
+    __tablename__ = "event_media"
+    
+    # File-specific information only
     file_url: Mapped[str] = mapped_column(
         String(512),
-        nullable=False
+        nullable=False,
+        comment="S3 URL for the media file"
     )
     
     s3_key: Mapped[Optional[str]] = mapped_column(
         String(512),
         nullable=True,
-        index=True
+        index=True,
+        comment="S3 object key"
     )
     
     file_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        index=True
+        index=True,
+        comment="MIME type of the file"
     )
     
     file_size: Mapped[Optional[int]] = mapped_column(
-        nullable=True
+        nullable=True,
+        comment="File size in bytes"
     )
     
-    # Tags for categorization
-    tags: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
+    # Zone relationship - links to zone metadata
+    zone_id: Mapped[Optional[UUID]] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("event_media_zones.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="Reference to zone metadata (title, description, tags)"
     )
     
-    # Batch/Zone grouping - groups media uploaded together
+    # Legacy batch_id for backward compatibility (deprecated, use zone_id)
     batch_id: Mapped[Optional[UUID]] = mapped_column(
         PostgresUUID(as_uuid=True),
         nullable=True,
         index=True,
-        comment="Groups media files uploaded together as a zone/batch"
+        comment="Deprecated: Use zone_id instead"
     )
     
     # Event relationship
@@ -502,16 +562,11 @@ class EventMedia(BaseModel):
     
     # Relationships
     event: Mapped["Event"] = relationship("Event", back_populates="media")
-    
-    def get_tags_list(self) -> List[str]:
-        """Get tags as a list."""
-        if not self.tags:
-            return []
-        return [tag.strip() for tag in self.tags.split(",") if tag.strip()]
-    
-    def set_tags_list(self, tags: List[str]) -> None:
-        """Set tags from a list."""
-        self.tags = ",".join(tags) if tags else None
+    zone: Mapped[Optional["EventMediaZone"]] = relationship(
+        "EventMediaZone",
+        back_populates="media_files",
+        foreign_keys=[zone_id]
+    )
 
 
 class EventPlug(BaseModel):

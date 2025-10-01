@@ -1,0 +1,143 @@
+"""Add EventMediaZone model and refactor media metadata storage
+
+Revision ID: 7a9d6f4f8420
+Revises: b1979620300f
+Create Date: 2025-10-01 07:58:59.087622
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision = '7a9d6f4f8420'
+down_revision = 'b1979620300f'
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    # Step 1: Create event_media_zones table
+    op.create_table('event_media_zones',
+    sa.Column('title', sa.String(length=256), nullable=True, comment='Zone title applied to all media in this zone'),
+    sa.Column('description', sa.Text(), nullable=True, comment='Zone description applied to all media in this zone'),
+    sa.Column('tags', sa.Text(), nullable=True, comment='Comma-separated tags applied to all media in this zone'),
+    sa.Column('event_id', sa.UUID(), nullable=False),
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('is_deleted', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.ForeignKeyConstraint(['event_id'], ['events.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_event_media_zones_created_at'), 'event_media_zones', ['created_at'], unique=False)
+    op.create_index(op.f('ix_event_media_zones_deleted_at'), 'event_media_zones', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_event_media_zones_event_id'), 'event_media_zones', ['event_id'], unique=False)
+    op.create_index(op.f('ix_event_media_zones_id'), 'event_media_zones', ['id'], unique=False)
+    op.create_index(op.f('ix_event_media_zones_is_deleted'), 'event_media_zones', ['is_deleted'], unique=False)
+    op.create_index(op.f('ix_event_media_zones_updated_at'), 'event_media_zones', ['updated_at'], unique=False)
+    
+    # Step 2: Add zone_id column to event_media
+    op.add_column('event_media', sa.Column('zone_id', sa.UUID(), nullable=True, comment='Reference to zone metadata (title, description, tags)'))
+    op.create_index(op.f('ix_event_media_zone_id'), 'event_media', ['zone_id'], unique=False)
+    op.create_foreign_key('fk_event_media_zone_id', 'event_media', 'event_media_zones', ['zone_id'], ['id'], ondelete='CASCADE')
+    
+    # Step 3: Migrate existing data - create zones from batch_id groups
+    # For each unique batch_id with metadata, create a zone and link media files
+    connection = op.get_bind()
+    
+    # Create zones for existing batches (where batch_id is not null and has metadata)
+    connection.execute(sa.text("""
+        INSERT INTO event_media_zones (id, event_id, title, description, tags, created_at, updated_at, is_deleted)
+        SELECT DISTINCT 
+            batch_id as id,
+            event_id,
+            (SELECT title FROM event_media em2 WHERE em2.batch_id = em.batch_id LIMIT 1) as title,
+            (SELECT description FROM event_media em2 WHERE em2.batch_id = em.batch_id LIMIT 1) as description,
+            (SELECT tags FROM event_media em2 WHERE em2.batch_id = em.batch_id LIMIT 1) as tags,
+            MIN(created_at) as created_at,
+            MAX(updated_at) as updated_at,
+            false as is_deleted
+        FROM event_media em
+        WHERE batch_id IS NOT NULL
+        AND is_deleted = false
+        GROUP BY batch_id, event_id
+    """))
+    
+    # Link media files to their zones
+    connection.execute(sa.text("""
+        UPDATE event_media
+        SET zone_id = batch_id
+        WHERE batch_id IS NOT NULL
+    """))
+    
+    # Step 4: Update column comments
+    op.alter_column('event_media', 'file_url',
+               existing_type=sa.VARCHAR(length=512),
+               comment='S3 URL for the media file',
+               existing_nullable=False)
+    op.alter_column('event_media', 's3_key',
+               existing_type=sa.VARCHAR(length=512),
+               comment='S3 object key',
+               existing_nullable=True)
+    op.alter_column('event_media', 'file_type',
+               existing_type=sa.VARCHAR(length=32),
+               comment='MIME type of the file',
+               existing_nullable=False)
+    op.alter_column('event_media', 'file_size',
+               existing_type=sa.INTEGER(),
+               comment='File size in bytes',
+               existing_nullable=True)
+    op.alter_column('event_media', 'batch_id',
+               existing_type=sa.UUID(),
+               comment='Deprecated: Use zone_id instead',
+               existing_nullable=True)
+    
+    # Step 5: Drop old columns from event_media
+    op.drop_column('event_media', 'description')
+    op.drop_column('event_media', 'tags')
+    op.drop_column('event_media', 'title')
+
+
+def downgrade() -> None:
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.add_column('event_media', sa.Column('title', sa.VARCHAR(length=256), autoincrement=False, nullable=True))
+    op.add_column('event_media', sa.Column('tags', sa.TEXT(), autoincrement=False, nullable=True))
+    op.add_column('event_media', sa.Column('description', sa.TEXT(), autoincrement=False, nullable=True))
+    op.drop_constraint(None, 'event_media', type_='foreignkey')
+    op.drop_index(op.f('ix_event_media_zone_id'), table_name='event_media')
+    op.alter_column('event_media', 'batch_id',
+               existing_type=sa.UUID(),
+               comment='Groups media files uploaded together as a zone/batch',
+               existing_comment='Deprecated: Use zone_id instead',
+               existing_nullable=True)
+    op.alter_column('event_media', 'file_size',
+               existing_type=sa.INTEGER(),
+               comment=None,
+               existing_comment='File size in bytes',
+               existing_nullable=True)
+    op.alter_column('event_media', 'file_type',
+               existing_type=sa.VARCHAR(length=32),
+               comment=None,
+               existing_comment='MIME type of the file',
+               existing_nullable=False)
+    op.alter_column('event_media', 's3_key',
+               existing_type=sa.VARCHAR(length=512),
+               comment=None,
+               existing_comment='S3 object key',
+               existing_nullable=True)
+    op.alter_column('event_media', 'file_url',
+               existing_type=sa.VARCHAR(length=512),
+               comment=None,
+               existing_comment='S3 URL for the media file',
+               existing_nullable=False)
+    op.drop_column('event_media', 'zone_id')
+    op.drop_index(op.f('ix_event_media_zones_updated_at'), table_name='event_media_zones')
+    op.drop_index(op.f('ix_event_media_zones_is_deleted'), table_name='event_media_zones')
+    op.drop_index(op.f('ix_event_media_zones_id'), table_name='event_media_zones')
+    op.drop_index(op.f('ix_event_media_zones_event_id'), table_name='event_media_zones')
+    op.drop_index(op.f('ix_event_media_zones_deleted_at'), table_name='event_media_zones')
+    op.drop_index(op.f('ix_event_media_zones_created_at'), table_name='event_media_zones')
+    op.drop_table('event_media_zones')
+    # ### end Alembic commands ###

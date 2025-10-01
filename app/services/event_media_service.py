@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError, NotFoundError, BusinessLogicError
-from app.models.event import Event, EventMedia
+from app.models.event import Event, EventMedia, EventMediaZone
 from app.repositories.event_repository import EventMediaRepository
 from app.schemas.event import EventMediaCreate, EventMediaUpdate, EventMediaUpload
 from app.services.decorators import handle_service_errors, require_event_ownership
@@ -27,6 +27,7 @@ class EventMediaService(EventBaseService):
         """Initialize event media service."""
         super().__init__(db)
         self.media_repo = EventMediaRepository(db)
+        self.db = db  # Keep db session for zone operations
 
     @handle_service_errors("create media", "MEDIA_CREATION_FAILED")
     @require_event_ownership
@@ -435,40 +436,48 @@ class EventMediaService(EventBaseService):
         upload_metadata: EventMediaUpload
     ) -> Dict[str, Any]:
         """
-        Upload multiple files to S3 and create media records in batch with shared metadata.
+        Upload multiple files to S3 and create media records with zone metadata stored once.
+        
+        Business Logic:
+        - Creates ONE zone record with title, description, tags
+        - Creates multiple media records with ONLY file data (no metadata duplication)
+        - All media files reference the same zone for metadata
         
         Args:
             user_id: Owner user ID
             event_id: Event ID
             files_data: List of tuples (file_obj, filename)
-            upload_metadata: Shared metadata (title, description, tags) for the entire batch
+            upload_metadata: Shared metadata (title, description, tags) stored ONCE at zone level
             
         Returns:
-            Dictionary with successful uploads, failed uploads, counts, and batch_id
+            Dictionary with successful uploads, failed uploads, counts, and zone_id
         """
         from uuid import uuid4
         
-        # Generate a unique batch_id for this upload session
-        batch_id = uuid4()
+        # Step 1: Create zone record with metadata (stored ONCE)
+        zone = EventMediaZone(
+            id=uuid4(),
+            event_id=event_id,
+            title=upload_metadata.title,
+            description=upload_metadata.description,
+            tags=self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
+        )
+        self.db.add(zone)
+        self.db.flush()  # Get the zone ID without committing
         
+        zone_id = zone.id
         successful = []
         failed = []
         
-        # Convert metadata once for all files
-        tags_str = self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
-        
+        # Step 2: Upload files and create media records WITHOUT metadata
         for idx, (file_obj, filename) in enumerate(files_data):
             try:
-                # Upload individual file with shared metadata and batch_id
-                media = await self._upload_file_with_batch_id(
+                media = await self._upload_file_to_zone(
                     user_id=user_id,
                     event_id=event_id,
                     file_obj=file_obj,
                     filename=filename,
-                    batch_id=batch_id,
-                    title=upload_metadata.title,
-                    description=upload_metadata.description,
-                    tags_str=tags_str
+                    zone_id=zone_id
                 )
                 successful.append(media)
                 logger.info(f"Batch upload: Successfully uploaded file {idx + 1}/{len(files_data)}: {filename}")
@@ -483,27 +492,37 @@ class EventMediaService(EventBaseService):
                 failed.append(error_detail)
                 logger.error(f"Batch upload: Failed to upload file {idx + 1}/{len(files_data)}: {filename}. Error: {e}")
         
+        # Step 3: Commit if we have successful uploads, rollback if all failed
+        if successful:
+            self.db.commit()
+            logger.info(f"Zone {zone_id} created with {len(successful)} media files")
+        else:
+            self.db.rollback()
+            logger.warning(f"All uploads failed, zone not created")
+            zone_id = None
+        
         return {
             "successful": successful,
             "failed": failed,
             "total_requested": len(files_data),
             "total_successful": len(successful),
             "total_failed": len(failed),
-            "batch_id": batch_id if successful else None
+            "zone_id": zone_id,  # Changed from batch_id to zone_id
+            "batch_id": zone_id  # Keep for backward compatibility
         }
     
-    async def _upload_file_with_batch_id(
+    async def _upload_file_to_zone(
         self,
         user_id: UUID,
         event_id: UUID,
         file_obj: Union[Any, bytes],
         filename: str,
-        batch_id: UUID,
-        title: Optional[str],
-        description: Optional[str],
-        tags_str: str
+        zone_id: UUID
     ) -> EventMedia:
-        """Internal method to upload a file with batch_id."""
+        """
+        Internal method to upload a file and link it to a zone.
+        NO metadata duplication - only file-specific data stored.
+        """
         # Get file size
         if isinstance(file_obj, bytes):
             file_size = len(file_obj)
@@ -541,7 +560,7 @@ class EventMediaService(EventBaseService):
             metadata={
                 'event_id': str(event_id),
                 'user_id': str(user_id),
-                'batch_id': str(batch_id),
+                'zone_id': str(zone_id),
                 'original_filename': filename
             }
         )
@@ -552,19 +571,16 @@ class EventMediaService(EventBaseService):
                 error_code="FILE_URL_TOO_LONG"
             )
         
-        # Create media record with batch_id
-        # NOTE: title, description, tags are stored only for zone metadata retrieval
-        # They should not be displayed on individual media items
+        # Create media record with ONLY file data (NO metadata)
         media_dict = {
             "event_id": event_id,
-            "batch_id": batch_id,
-            "title": title[:256] if title and len(title) > 256 else title,
-            "description": description,
+            "zone_id": zone_id,
+            "batch_id": zone_id,  # Keep for backward compatibility
             "file_url": file_url,
             "s3_key": s3_key,
             "file_type": file_type,
-            "file_size": file_size,
-            "tags": tags_str
+            "file_size": file_size
+            # NO title, description, or tags here - stored at zone level only
         }
         
         try:
@@ -660,32 +676,36 @@ class EventMediaService(EventBaseService):
         Args:
             user_id: Owner user ID
             event_id: Event ID
-            zone_id: Zone/Batch ID
+            zone_id: Zone ID
             
         Returns:
-            Dictionary with zone details and simplified media file URLs
+            Dictionary with zone metadata (title, description, tags) and media file URLs
         """
-        # Get all media for this zone
-        media_list = await self.media_repo.get_media_by_batch_id(event_id, zone_id)
+        # Get zone metadata (stored once)
+        zone = self.db.query(EventMediaZone).filter(
+            EventMediaZone.id == zone_id,
+            EventMediaZone.event_id == event_id,
+            EventMediaZone.is_deleted == False
+        ).first()
         
-        if not media_list:
+        if not zone:
             return None
         
-        # Use first media item's metadata as zone metadata
-        first_media = media_list[0]
+        # Get all media files for this zone
+        media_list = await self.media_repo.get_media_by_zone_id(event_id, zone_id)
         
-        # Extract only file_url from media items
+        # Extract only file_url from media items (NO metadata duplication)
         simplified_media = [{"file_url": media.file_url} for media in media_list]
         
         return {
-            "zone_id": zone_id,
-            "title": first_media.title,
-            "description": first_media.description,
-            "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
+            "zone_id": zone.id,
+            "title": zone.title,
+            "description": zone.description,
+            "tags": zone.get_tags_list(),
             "media_files": simplified_media,
             "file_count": len(media_list),
-            "created_at": first_media.created_at,
-            "updated_at": max(m.updated_at for m in media_list)
+            "created_at": zone.created_at,
+            "updated_at": zone.updated_at
         }
 
     def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:

@@ -523,7 +523,7 @@ class EventMediaRepository(BaseRepository[EventMedia]):
         batch_id: UUID
     ) -> List[EventMedia]:
         """
-        Get all media for a specific batch/zone.
+        Get all media for a specific batch (deprecated - use get_media_by_zone_id).
         
         Args:
             event_id: Event ID
@@ -552,6 +552,43 @@ class EventMediaRepository(BaseRepository[EventMedia]):
                 "Failed to get media by batch_id",
                 error_code="MEDIA_BATCH_ERROR",
                 details={"event_id": str(event_id), "batch_id": str(batch_id), "error": str(e)}
+            )
+
+    async def get_media_by_zone_id(
+        self,
+        event_id: UUID,
+        zone_id: UUID
+    ) -> List[EventMedia]:
+        """
+        Get all media files for a specific zone.
+        
+        Args:
+            event_id: Event ID
+            zone_id: Zone ID
+            
+        Returns:
+            List of media items in the zone
+        """
+        try:
+            query = self.db.query(self.model).filter(
+                and_(
+                    self.model.event_id == event_id,
+                    self.model.zone_id == zone_id,
+                    self.model.is_deleted == False
+                )
+            )
+            
+            results = query.order_by(desc(self.model.created_at)).all()
+            
+            logger.debug(f"Found {len(results)} media items for zone {zone_id} in event {event_id}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error getting media by zone_id for event {event_id}: {e}")
+            raise DatabaseError(
+                "Failed to get media by zone_id",
+                error_code="MEDIA_ZONE_ERROR",
+                details={"event_id": str(event_id), "zone_id": str(zone_id), "error": str(e)}
             )
 
 
