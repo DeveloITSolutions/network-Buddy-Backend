@@ -603,7 +603,8 @@ class EventMediaService(EventBaseService):
         file_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Get media grouped by batch_id (zones).
+        Get media grouped by zones.
+        Fetches metadata from EventMediaZone table (not from individual media files).
         
         Args:
             user_id: Owner user ID
@@ -615,6 +616,12 @@ class EventMediaService(EventBaseService):
         """
         from collections import defaultdict
         
+        # Get all zones for the event
+        zones_query = self.db.query(EventMediaZone).filter(
+            EventMediaZone.event_id == event_id,
+            EventMediaZone.is_deleted == False
+        ).all()
+        
         # Get all media for the event
         media_list, _ = await self.media_repo.get_event_media(
             event_id=event_id,
@@ -623,35 +630,54 @@ class EventMediaService(EventBaseService):
             limit=10000  # Get all
         )
         
-        # Group by batch_id
-        zones_dict = defaultdict(list)
+        # Group media by zone_id
+        media_by_zone = defaultdict(list)
         for media in media_list:
-            batch_key = str(media.batch_id) if media.batch_id else "ungrouped"
-            zones_dict[batch_key].append(media)
+            zone_key = str(media.zone_id) if media.zone_id else "ungrouped"
+            media_by_zone[zone_key].append(media)
         
-        # Build zones list
+        # Build zones list from EventMediaZone records
         zones = []
-        for batch_id_str, media_files in zones_dict.items():
+        for zone in zones_query:
+            zone_id_str = str(zone.id)
+            media_files = media_by_zone.get(zone_id_str, [])
+            
             if not media_files:
                 continue
             
-            # Use first media item's metadata as zone metadata
-            first_media = media_files[0]
-            
-            # Extract only file_url from media items
+            # Extract only file_url from media items (NO metadata duplication)
             simplified_media = [{"file_url": media.file_url} for media in media_files]
             
-            zone = {
-                "zone_id": first_media.batch_id if first_media.batch_id else first_media.id,
-                "title": first_media.title,
-                "description": first_media.description,
-                "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
+            zone_dict = {
+                "zone_id": zone.id,
+                "title": zone.title,                    # From zones table
+                "description": zone.description,        # From zones table
+                "tags": zone.get_tags_list(),          # From zones table
                 "media_files": simplified_media,
                 "file_count": len(media_files),
-                "created_at": first_media.created_at,
-                "updated_at": max(m.updated_at for m in media_files)
+                "created_at": zone.created_at,
+                "updated_at": zone.updated_at
             }
-            zones.append(zone)
+            zones.append(zone_dict)
+        
+        # Handle ungrouped media (files without zone_id)
+        if "ungrouped" in media_by_zone:
+            ungrouped_files = media_by_zone["ungrouped"]
+            if ungrouped_files:
+                first_media = ungrouped_files[0]
+                simplified_media = [{"file_url": media.file_url} for media in ungrouped_files]
+                
+                zone_dict = {
+                    "zone_id": first_media.id,  # Use first media ID as zone ID
+                    "title": None,
+                    "description": None,
+                    "tags": [],
+                    "media_files": simplified_media,
+                    "file_count": len(ungrouped_files),
+                    "created_at": first_media.created_at,
+                    "updated_at": max(m.updated_at for m in ungrouped_files)
+                }
+                zones.append(zone_dict)
         
         # Sort zones by created_at (newest first)
         zones.sort(key=lambda x: x["created_at"], reverse=True)
