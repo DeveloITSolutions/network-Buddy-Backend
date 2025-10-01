@@ -31,8 +31,8 @@ def create_test_user():
         db = SessionLocal()
         
         # User credentials
-        email = "dr.tiff@socailabs.com"
-        password = "Davis-1986"
+        email = "hassan@yopmail.com"
+        password = "DevTest@123"
         
         # Check if user already exists
         existing_user = db.query(User).filter(User.email == email).first()

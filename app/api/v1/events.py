@@ -13,7 +13,7 @@ from app.schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
-    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse, EventMediaGroupedResponse,
+    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse, EventMediaGroupedResponse, MediaZone,
     EventPlugCreate, EventPlugResponse, EventPlugListResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
@@ -570,6 +570,38 @@ async def get_event_media_grouped(
         result = await media_service.get_event_media_grouped(user_id, event_id, file_type)
         
         return EventMediaGroupedResponse(**result)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get("/{event_id}/media/zones/{zone_id}", response_model=MediaZone, tags=["Zone - Media"])
+async def get_zone_details(
+    event_id: UUID,
+    zone_id: UUID,
+    current_user: CurrentActiveUser,
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Get details of a specific zone with all its media files.
+    
+    - Requires JWT authentication
+    - User can only access their own events
+    - Returns complete zone details with all associated media files
+    - Useful for viewing a specific upload batch/zone
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        zone_details = await media_service.get_zone_details(user_id, event_id, zone_id)
+        
+        if not zone_details:
+            raise NotFoundError(f"Zone {zone_id} not found for event {event_id}")
+        
+        return MediaZone(**zone_details)
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:

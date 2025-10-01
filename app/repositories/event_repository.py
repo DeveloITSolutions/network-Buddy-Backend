@@ -517,6 +517,43 @@ class EventMediaRepository(BaseRepository[EventMedia]):
                 details={"event_id": str(event_id), "tags": tags, "error": str(e)}
             )
 
+    async def get_media_by_batch_id(
+        self,
+        event_id: UUID,
+        batch_id: UUID
+    ) -> List[EventMedia]:
+        """
+        Get all media for a specific batch/zone.
+        
+        Args:
+            event_id: Event ID
+            batch_id: Batch/Zone ID
+            
+        Returns:
+            List of media items in the batch
+        """
+        try:
+            query = self.db.query(self.model).filter(
+                and_(
+                    self.model.event_id == event_id,
+                    self.model.batch_id == batch_id,
+                    self.model.is_deleted == False
+                )
+            )
+            
+            results = query.order_by(desc(self.model.created_at)).all()
+            
+            logger.debug(f"Found {len(results)} media items for batch {batch_id} in event {event_id}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error getting media by batch_id for event {event_id}: {e}")
+            raise DatabaseError(
+                "Failed to get media by batch_id",
+                error_code="MEDIA_BATCH_ERROR",
+                details={"event_id": str(event_id), "batch_id": str(batch_id), "error": str(e)}
+            )
+
 
 class EventPlugRepository(BaseRepository[EventPlug]):
     """

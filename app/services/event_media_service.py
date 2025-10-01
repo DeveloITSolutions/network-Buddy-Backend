@@ -641,6 +641,45 @@ class EventMediaService(EventBaseService):
             "total_files": len(media_list)
         }
 
+    @handle_service_errors("get zone details", "ZONE_DETAILS_RETRIEVAL_FAILED")
+    @require_event_ownership
+    async def get_zone_details(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        zone_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get details of a specific zone with all its media files.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            zone_id: Zone/Batch ID
+            
+        Returns:
+            Dictionary with zone details and media files, or None if not found
+        """
+        # Get all media for this zone
+        media_list = await self.media_repo.get_media_by_batch_id(event_id, zone_id)
+        
+        if not media_list:
+            return None
+        
+        # Use first media item's metadata as zone metadata
+        first_media = media_list[0]
+        
+        return {
+            "zone_id": zone_id,
+            "title": first_media.title,
+            "description": first_media.description,
+            "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
+            "media_files": media_list,
+            "file_count": len(media_list),
+            "created_at": first_media.created_at,
+            "updated_at": max(m.updated_at for m in media_list)
+        }
+
     def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convert tags list to string format for database storage.
