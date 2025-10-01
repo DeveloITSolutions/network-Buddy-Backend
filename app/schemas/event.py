@@ -301,6 +301,15 @@ class EventMediaBatchUploadResponse(BaseModel):
     batch_id: Optional[UUID] = Field(None, description="Batch ID for all successfully uploaded files")
 
 
+class MediaFileSimplified(BaseModel):
+    """Simplified schema for media files in a zone - only essential data."""
+    
+    file_url: str = Field(..., description="Media file URL")
+    
+    class Config:
+        from_attributes = True
+
+
 class MediaZone(BaseModel):
     """Schema for a zone/batch of media files."""
     
@@ -308,7 +317,7 @@ class MediaZone(BaseModel):
     title: Optional[str] = Field(None, description="Zone title")
     description: Optional[str] = Field(None, description="Zone description")
     tags: List[str] = Field(default_factory=list, description="Zone tags")
-    media_files: List[EventMediaResponse] = Field(..., description="All media files in this zone")
+    media_files: List[MediaFileSimplified] = Field(..., description="Media file URLs in this zone")
     file_count: int = Field(..., description="Number of files in this zone")
     created_at: datetime = Field(..., description="When this zone was created")
     updated_at: datetime = Field(..., description="When this zone was last updated")

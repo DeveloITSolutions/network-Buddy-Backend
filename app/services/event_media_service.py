@@ -553,6 +553,8 @@ class EventMediaService(EventBaseService):
             )
         
         # Create media record with batch_id
+        # NOTE: title, description, tags are stored only for zone metadata retrieval
+        # They should not be displayed on individual media items
         media_dict = {
             "event_id": event_id,
             "batch_id": batch_id,
@@ -620,12 +622,15 @@ class EventMediaService(EventBaseService):
             # Use first media item's metadata as zone metadata
             first_media = media_files[0]
             
+            # Extract only file_url from media items
+            simplified_media = [{"file_url": media.file_url} for media in media_files]
+            
             zone = {
                 "zone_id": first_media.batch_id if first_media.batch_id else first_media.id,
                 "title": first_media.title,
                 "description": first_media.description,
                 "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
-                "media_files": media_files,
+                "media_files": simplified_media,
                 "file_count": len(media_files),
                 "created_at": first_media.created_at,
                 "updated_at": max(m.updated_at for m in media_files)
@@ -658,7 +663,7 @@ class EventMediaService(EventBaseService):
             zone_id: Zone/Batch ID
             
         Returns:
-            Dictionary with zone details and media files, or None if not found
+            Dictionary with zone details and simplified media file URLs
         """
         # Get all media for this zone
         media_list = await self.media_repo.get_media_by_batch_id(event_id, zone_id)
@@ -669,12 +674,15 @@ class EventMediaService(EventBaseService):
         # Use first media item's metadata as zone metadata
         first_media = media_list[0]
         
+        # Extract only file_url from media items
+        simplified_media = [{"file_url": media.file_url} for media in media_list]
+        
         return {
             "zone_id": zone_id,
             "title": first_media.title,
             "description": first_media.description,
             "tags": first_media.get_tags_list() if hasattr(first_media, 'get_tags_list') else [],
-            "media_files": media_list,
+            "media_files": simplified_media,
             "file_count": len(media_list),
             "created_at": first_media.created_at,
             "updated_at": max(m.updated_at for m in media_list)
