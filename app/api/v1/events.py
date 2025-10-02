@@ -254,6 +254,7 @@ async def list_events(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     search: Optional[str] = Query(None, description="Search term"),
+    time_filter: Optional[str] = Query(None, description="Filter by time period: 'today', 'upcoming', 'past'"),
     start_date_from: Optional[str] = Query(None, description="Filter events from this date"),
     start_date_to: Optional[str] = Query(None, description="Filter events to this date"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
@@ -267,10 +268,36 @@ async def list_events(
     
     - Requires JWT authentication
     - Returns only the user's own events
+    - Supports time-based filtering: 'today', 'upcoming', 'past'
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
+        
+        # Apply time-based filtering if time_filter is provided
+        from datetime import datetime, timezone
+        if time_filter:
+            now = datetime.now(timezone.utc)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            if time_filter.lower() == "today":
+                # Events happening today (start_date or end_date falls on today)
+                start_date_from = today_start.isoformat()
+                start_date_to = today_end.isoformat()
+            elif time_filter.lower() == "upcoming":
+                # Events starting after today
+                start_date_from = today_end.isoformat()
+                start_date_to = None
+            elif time_filter.lower() == "past":
+                # Events that ended before today
+                start_date_from = None
+                start_date_to = today_start.isoformat()
+            else:
+                raise ValidationError(
+                    f"Invalid time_filter value: {time_filter}. Must be 'today', 'upcoming', or 'past'",
+                    error_code="INVALID_TIME_FILTER"
+                )
         
         if search:
             # Use search functionality
