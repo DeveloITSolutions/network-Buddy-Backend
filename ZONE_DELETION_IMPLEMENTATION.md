@@ -194,9 +194,9 @@ Authorization: Bearer <token>
 {
   "zone_id": "650e8400-...",
   "media_files": [
-    {"file_url": "https://...photo1.jpg"},
-    {"file_url": "https://...photo2.jpg"},
-    {"file_url": "https://...photo3.jpg"}
+    {"id": "750e8400-...", "file_url": "https://...photo1.jpg"},
+    {"id": "850e8400-...", "file_url": "https://...photo2.jpg"},
+    {"id": "950e8400-...", "file_url": "https://...photo3.jpg"}
   ],
   "file_count": 3
 }

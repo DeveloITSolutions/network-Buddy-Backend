@@ -664,8 +664,8 @@ class EventMediaService(EventBaseService):
             if not media_files:
                 continue
             
-            # Extract only file_url from media items (NO metadata duplication)
-            simplified_media = [{"file_url": media.file_url} for media in media_files]
+            # Extract id and file_url from media items (NO metadata duplication)
+            simplified_media = [{"id": media.id, "file_url": media.file_url} for media in media_files]
             
             zone_dict = {
                 "zone_id": zone.id,
@@ -684,7 +684,7 @@ class EventMediaService(EventBaseService):
             ungrouped_files = media_by_zone["ungrouped"]
             if ungrouped_files:
                 first_media = ungrouped_files[0]
-                simplified_media = [{"file_url": media.file_url} for media in ungrouped_files]
+                simplified_media = [{"id": media.id, "file_url": media.file_url} for media in ungrouped_files]
                 
                 zone_dict = {
                     "zone_id": first_media.id,  # Use first media ID as zone ID
@@ -739,8 +739,8 @@ class EventMediaService(EventBaseService):
         # Get all media files for this zone
         media_list = await self.media_repo.get_media_by_zone_id(event_id, zone_id)
         
-        # Extract only file_url from media items (NO metadata duplication)
-        simplified_media = [{"file_url": media.file_url} for media in media_list]
+        # Extract id and file_url from media items (NO metadata duplication)
+        simplified_media = [{"id": media.id, "file_url": media.file_url} for media in media_list]
         
         return {
             "zone_id": zone.id,

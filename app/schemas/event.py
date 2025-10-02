@@ -305,6 +305,7 @@ class EventMediaBatchUploadResponse(BaseModel):
 class MediaFileSimplified(BaseModel):
     """Simplified schema for media files in a zone - only essential data."""
     
+    id: UUID = Field(..., description="Media file ID (for deletion)")
     file_url: str = Field(..., description="Media file URL")
     
     class Config:
