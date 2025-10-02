@@ -71,9 +71,10 @@ class EventPlugMediaService(EventBaseService):
         
         # Validate file type based on media category
         if upload_data.media_category == "snap":
-            if not file_type.startswith('image/'):
+            # Allow images and videos for snaps
+            if not (file_type.startswith('image/') or file_type.startswith('video/')):
                 raise ValidationError(
-                    "Snap media must be an image file",
+                    "Snap media must be an image or video file",
                     error_code="INVALID_SNAP_FILE_TYPE"
                 )
         elif upload_data.media_category == "voice":

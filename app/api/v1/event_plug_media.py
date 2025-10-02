@@ -71,12 +71,13 @@ async def upload_multiple_plug_media_to_s3(
                 # Read file content
                 file_content = await file.read()
                 
-                # Check file size (100MB max)
-                max_file_size = 100 * 1024 * 1024
+                # Check file size against configured limit
+                from app.config.settings import settings
+                max_file_size = settings.max_file_size
                 if len(file_content) > max_file_size:
                     failed_uploads.append({
                         "filename": file.filename,
-                        "error": "File size exceeds maximum allowed size (100MB)"
+                        "error": f"File size exceeds maximum allowed size ({max_file_size} bytes)"
                     })
                     continue
                 

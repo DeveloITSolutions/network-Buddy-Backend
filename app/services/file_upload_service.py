@@ -57,14 +57,15 @@ class FileUploadService:
         """Initialize file upload service."""
         self.db = db
         self.upload_dir = Path(upload_dir)
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create subdirectories for different file types
-        (self.upload_dir / "images").mkdir(exist_ok=True)
-        (self.upload_dir / "videos").mkdir(exist_ok=True)
-        (self.upload_dir / "documents").mkdir(exist_ok=True)
-        (self.upload_dir / "audio").mkdir(exist_ok=True)
-        (self.upload_dir / "events").mkdir(exist_ok=True)
+        # Create base upload directory if it doesn't exist
+        # Subdirectories are created lazily when files are uploaded
+        try:
+            self.upload_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            logger.warning(f"Cannot create upload directory {self.upload_dir}: {e}. Directory must exist with proper permissions.")
+        except Exception as e:
+            logger.error(f"Unexpected error creating upload directory: {e}")
     
     async def upload_file(
         self, 

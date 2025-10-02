@@ -36,8 +36,8 @@ RUN pip install --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p logs uploads
+# Create necessary directories with subdirectories for file uploads
+RUN mkdir -p logs uploads/images uploads/videos uploads/documents uploads/audio uploads/events
 
 # Expose port
 EXPOSE 8000
@@ -68,8 +68,8 @@ RUN pip install --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Create necessary directories with proper permissions
-RUN mkdir -p logs uploads && \
+# Create necessary directories with subdirectories and proper permissions
+RUN mkdir -p logs uploads/images uploads/videos uploads/documents uploads/audio uploads/events && \
     chmod -R 755 logs uploads
 
 # Create non-root user for security

@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     celery_result_backend: str = Field(default="redis://redis:6379/2", description="Celery result backend URL")
     
     # File Upload Settings
-    max_file_size: int = Field(default=10 * 1024 * 1024, description="Max file size in bytes (10MB)")
+    max_file_size: int = Field(default=100 * 1024 * 1024, description="Max file size in bytes (100MB)")
     upload_path: str = Field(default="uploads", description="File upload directory")
     
     # AWS S3 Settings
