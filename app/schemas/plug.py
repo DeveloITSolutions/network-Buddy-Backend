@@ -145,8 +145,8 @@ class PlugResponse(BaseModel):
     id: UUID
     user_id: UUID
     plug_type: PlugType
-    first_name: str
-    last_name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     job_title: Optional[str]
     profile_picture: Optional[str]
     company: Optional[str]

@@ -51,12 +51,7 @@ class PlugRepository(BaseRepository[Plug]):
             # Ensure user association
             plug_data.update({"user_id": user_id})
             
-            # Validate minimum required fields
-            if not plug_data.get("first_name") or not plug_data.get("last_name"):
-                raise ValidationError(
-                    "First name and last name are required",
-                    error_code="MISSING_REQUIRED_FIELDS"
-                )
+            # Note: Names are optional to allow creating minimal targets
             
             return await self.create(plug_data)
             
