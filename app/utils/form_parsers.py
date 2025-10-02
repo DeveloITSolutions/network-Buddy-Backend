@@ -4,11 +4,13 @@ Form data parsers for handling multipart/form-data in API endpoints.
 from datetime import datetime
 from typing import Optional, Dict, Any
 from uuid import UUID
+import mimetypes
 
 from fastapi import UploadFile
 import logging
 
 from app.services.file_upload_service import FileUploadService
+from app.services.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -116,19 +118,43 @@ async def parse_event_form_data(
             logger.error(f"Failed to parse end_date: {e}")
             raise ValueError(f"Invalid end_date format: {end_date}")
     
-    # Handle file upload
-    if cover_image and cover_image.filename and file_service and user_id:
+    # Handle file upload to S3
+    if cover_image and cover_image.filename and user_id:
         try:
-            file_url, file_type, file_size, original_name = await file_service.upload_file(
-                file=cover_image,
-                user_id=user_id,
-                event_id=event_id,
-                subdirectory="events"
+            # Read file content
+            file_content = await cover_image.read()
+            
+            # Determine content type
+            content_type, _ = mimetypes.guess_type(cover_image.filename)
+            file_type = content_type or 'application/octet-stream'
+            
+            # Generate S3 key
+            if event_id:
+                s3_key = s3_service()._generate_s3_key(
+                    prefix=f"events/{event_id}/cover",
+                    filename=cover_image.filename
+                )
+            else:
+                s3_key = s3_service()._generate_s3_key(
+                    prefix="events/cover",
+                    filename=cover_image.filename
+                )
+            
+            # Upload to S3
+            file_url = s3_service().upload_file(
+                file_obj=file_content,
+                key=s3_key,
+                metadata={
+                    'user_id': str(user_id),
+                    'event_id': str(event_id) if event_id else 'new',
+                    'original_filename': cover_image.filename
+                }
             )
+            
             event_dict["cover_image_url"] = file_url
-            logger.info(f"Uploaded cover image: {file_url}")
+            logger.info(f"Uploaded cover image to S3: {file_url}")
         except Exception as upload_error:
-            logger.error(f"Failed to upload cover image: {upload_error}")
+            logger.error(f"Failed to upload cover image to S3: {upload_error}")
             # Continue without image rather than failing the entire request
     
     return event_dict
