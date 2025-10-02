@@ -16,11 +16,11 @@ if TYPE_CHECKING:
 class EventBase(BaseModel):
     """Base schema for event operations."""
     
-    title: str = Field(..., min_length=1, max_length=128, description="Event title")
+    title: Optional[str] = Field(None, max_length=128, description="Event title")
     theme: Optional[str] = Field(None, max_length=64, description="Event theme")
     description: Optional[str] = Field(None, description="Event description")
-    start_date: datetime = Field(..., description="Event start date and time")
-    end_date: datetime = Field(..., description="Event end date and time")
+    start_date: Optional[datetime] = Field(None, description="Event start date and time")
+    end_date: Optional[datetime] = Field(None, description="Event end date and time")
     location_name: Optional[str] = Field(None, max_length=128, description="Location name")
     location_address: Optional[str] = Field(None, description="Full address")
     city: Optional[str] = Field(None, max_length=64, description="City")
@@ -29,8 +29,8 @@ class EventBase(BaseModel):
     postal_code: Optional[str] = Field(None, max_length=16, description="Postal code")
     
     # Geographic coordinates
-    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitude (-90 to 90)")
-    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitude (-180 to 180)")
+    latitude: Optional[float] = Field(None, description="Latitude (-90 to 90)")
+    longitude: Optional[float] = Field(None, description="Longitude (-180 to 180)")
     
     # Additional location metadata (Google Places data)
     location_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional location metadata from Google Places")
@@ -42,15 +42,16 @@ class EventBase(BaseModel):
     @field_validator('end_date')
     @classmethod
     def validate_end_date(cls, v, info):
-        """Validate that end date is after start date."""
-        if hasattr(info, 'data') and 'start_date' in info.data and v <= info.data['start_date']:
-            raise ValueError('End date must be after start date')
+        """Validate that end date is after start date (only if both provided)."""
+        if v is not None and hasattr(info, 'data') and 'start_date' in info.data and info.data['start_date'] is not None:
+            if v <= info.data['start_date']:
+                raise ValueError('End date must be after start date')
         return v
     
     @field_validator('latitude')
     @classmethod
     def validate_latitude(cls, v):
-        """Validate latitude range."""
+        """Validate latitude range (only if provided)."""
         if v is not None and not (-90 <= v <= 90):
             raise ValueError('Latitude must be between -90 and 90')
         return v
@@ -58,7 +59,7 @@ class EventBase(BaseModel):
     @field_validator('longitude')
     @classmethod
     def validate_longitude(cls, v):
-        """Validate longitude range."""
+        """Validate longitude range (only if provided)."""
         if v is not None and not (-180 <= v <= 180):
             raise ValueError('Longitude must be between -180 and 180')
         return v
@@ -66,14 +67,14 @@ class EventBase(BaseModel):
     @field_validator('location_metadata')
     @classmethod
     def validate_location_metadata(cls, v):
-        """Validate location metadata structure."""
+        """Validate location metadata structure (only if provided)."""
         if v is not None and not isinstance(v, dict):
             raise ValueError('Location metadata must be a dictionary')
         return v
 
 
 class EventCreate(EventBase):
-    """Schema for creating an event."""
+    """Schema for creating an event. All fields are optional."""
     pass
 
 
@@ -329,6 +330,28 @@ class EventMediaGroupedResponse(BaseModel):
     zones: List[MediaZone] = Field(..., description="Media grouped by zones/batches")
     total_zones: int = Field(..., description="Total number of zones")
     total_files: int = Field(..., description="Total number of media files across all zones")
+
+
+class ZoneUpdate(BaseModel):
+    """Schema for updating zone metadata."""
+    
+    title: Optional[str] = Field(None, max_length=256, description="Zone title")
+    description: Optional[str] = Field(None, description="Zone description")
+    tags: Optional[List[str]] = Field(None, description="Zone tags")
+
+
+class ZoneUpdateResponse(BaseModel):
+    """Schema for zone update response."""
+    
+    zone_id: UUID = Field(..., description="Zone identifier")
+    title: Optional[str] = Field(None, description="Updated zone title")
+    description: Optional[str] = Field(None, description="Updated zone description")
+    tags: List[str] = Field(default_factory=list, description="Updated zone tags")
+    file_count: int = Field(..., description="Number of files in zone")
+    updated_at: datetime = Field(..., description="When zone was last updated")
+    
+    class Config:
+        from_attributes = True
 
 
 # Event-Plug association schemas

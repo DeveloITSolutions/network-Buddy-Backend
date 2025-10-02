@@ -13,12 +13,13 @@ from app.schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse,
     EventAgendaCreate, EventAgendaUpdate, EventAgendaResponse,
     EventExpenseCreate, EventExpenseUpdate, EventExpenseResponse,
-    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse, EventMediaGroupedResponse, MediaZone,
+    EventMediaCreate, EventMediaUpdate, EventMediaResponse, EventMediaUpload, EventMediaBatchUploadResponse, EventMediaGroupedResponse, MediaZone, ZoneUpdate, ZoneUpdateResponse,
     EventPlugCreate, EventPlugResponse, EventPlugListResponse, EventPlugBatchCreate, EventPlugBatchResponse, EventFilters
 )
 from app.services.event_service import EventService
 from app.services.event_media_service import EventMediaService
 from app.services.file_upload_service import FileUploadService
+from app.utils.form_parsers import parse_event_form_data
 
 logger = logging.getLogger(__name__)
 
@@ -48,24 +49,70 @@ def get_event_media_service(db: DatabaseSession) -> EventMediaService:
 
 @router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED, tags=["Events - Core"])
 async def create_event(
-    event_data: EventCreate,
     current_user: CurrentActiveUser,
-    service: EventService = Depends(get_event_service)
+    service: EventService = Depends(get_event_service),
+    file_service: FileUploadService = Depends(get_file_upload_service),
+    # Form fields
+    title: Optional[str] = Form(None),
+    theme: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
+    location_name: Optional[str] = Form(None),
+    location_address: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    country: Optional[str] = Form(None),
+    postal_code: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    website_url: Optional[str] = Form(None),
+    is_public: bool = Form(False),
+    # File upload
+    cover_image: Optional[UploadFile] = File(None)
 ):
     """
-    Create a new event.
+    Create a new event with optional cover image upload.
     
     - Requires JWT authentication
     - User can only create their own events
+    - Accepts multipart/form-data for file upload
+    - All fields are optional per client requirements
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Create event through service
-        event = await service.create_event(user_id, event_data)
+        # Parse form data using helper function (DRY principle)
+        event_dict = await parse_event_form_data(
+            title=title,
+            theme=theme,
+            description=description,
+            start_date=start_date,
+            end_date=end_date,
+            location_name=location_name,
+            location_address=location_address,
+            city=city,
+            state=state,
+            country=country,
+            postal_code=postal_code,
+            latitude=latitude,
+            longitude=longitude,
+            website_url=website_url,
+            is_public=is_public,
+            cover_image=cover_image,
+            file_service=file_service,
+            user_id=user_id
+        )
+        
+        # Create event through repository
+        from app.repositories.event_repository import EventRepository
+        event_repo = EventRepository(service.db)
+        event = await event_repo.create_event(user_id, event_dict)
         
         return EventResponse.model_validate(event)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:
@@ -75,27 +122,74 @@ async def create_event(
 @router.put("/{event_id}", response_model=EventResponse, tags=["Events - Core"])
 async def update_event(
     event_id: UUID,
-    event_data: EventUpdate,
     current_user: CurrentActiveUser,
-    service: EventService = Depends(get_event_service)
+    service: EventService = Depends(get_event_service),
+    file_service: FileUploadService = Depends(get_file_upload_service),
+    # Form fields
+    title: Optional[str] = Form(None),
+    theme: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
+    location_name: Optional[str] = Form(None),
+    location_address: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    country: Optional[str] = Form(None),
+    postal_code: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    website_url: Optional[str] = Form(None),
+    is_public: Optional[bool] = Form(None),
+    # File upload
+    cover_image: Optional[UploadFile] = File(None)
 ):
     """
-    Update an existing event.
+    Update an existing event with optional cover image upload.
     
     - Requires JWT authentication
     - User can only update their own events
+    - Accepts multipart/form-data for file upload
+    - All fields are optional for partial updates
     """
     try:
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # Update event through service
-        event = await service.update_event(user_id, event_id, event_data)
+        # Parse form data using helper function (DRY principle)
+        update_dict = await parse_event_form_data(
+            title=title,
+            theme=theme,
+            description=description,
+            start_date=start_date,
+            end_date=end_date,
+            location_name=location_name,
+            location_address=location_address,
+            city=city,
+            state=state,
+            country=country,
+            postal_code=postal_code,
+            latitude=latitude,
+            longitude=longitude,
+            website_url=website_url,
+            is_public=is_public,
+            cover_image=cover_image,
+            file_service=file_service,
+            user_id=user_id,
+            event_id=event_id
+        )
+        
+        # Update event through repository
+        from app.repositories.event_repository import EventRepository
+        event_repo = EventRepository(service.db)
+        event = await event_repo.update_event(user_id, event_id, update_dict)
         
         if not event:
             raise NotFoundError("Event not found")
         
         return EventResponse.model_validate(event)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:
@@ -610,6 +704,117 @@ async def get_zone_details(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+@router.patch("/{event_id}/media/zones/{zone_id}", response_model=ZoneUpdateResponse, tags=["Zone - Media"])
+async def update_zone_metadata(
+    event_id: UUID,
+    zone_id: UUID,
+    zone_update: ZoneUpdate,
+    current_user: CurrentActiveUser,
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Update zone metadata (title, description, tags).
+    
+    - Requires JWT authentication
+    - User can only update zones from their own events
+    - Updates only the provided fields (partial update)
+    - Does not affect media files in the zone
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Convert schema to dict, excluding unset fields
+        update_data = zone_update.model_dump(exclude_unset=True)
+        
+        # Update zone
+        updated_zone = await media_service.update_zone(user_id, event_id, zone_id, update_data)
+        
+        if not updated_zone:
+            raise NotFoundError(f"Zone {zone_id} not found for event {event_id}")
+        
+        return ZoneUpdateResponse(**updated_zone)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/{event_id}/media/zones/{zone_id}/files", response_model=EventMediaBatchUploadResponse, tags=["Zone - Media"])
+async def add_media_to_zone(
+    event_id: UUID,
+    zone_id: UUID,
+    current_user: CurrentActiveUser,
+    files: List[UploadFile] = File(..., description="Media files to add to the zone"),
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Add new media files to an existing zone.
+    
+    - Requires JWT authentication
+    - User can only add media to zones in their own events
+    - Files inherit the zone's existing metadata (title, description, tags)
+    - Useful for adding more photos to an existing album/zone
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # File size limit
+        max_file_size = 100 * 1024 * 1024  # 100MB per file
+        
+        # Prepare files data
+        files_data = []
+        for idx, file in enumerate(files):
+            # Read file content
+            file_content = await file.read()
+            
+            # Check file size
+            if len(file_content) > max_file_size:
+                logger.warning(f"File {file.filename} ({len(file_content)} bytes) exceeds max size, skipping")
+                continue
+            
+            files_data.append((
+                file_content,
+                file.filename or f"unknown_file_{idx}"
+            ))
+        
+        if not files_data:
+            raise ValidationError("No valid files to upload", error_code="NO_VALID_FILES")
+        
+        # Add files to zone
+        result = await media_service.add_media_to_zone(
+            user_id=user_id,
+            event_id=event_id,
+            zone_id=zone_id,
+            files_data=files_data
+        )
+        
+        # Convert successful uploads to response format
+        successful_responses = [
+            EventMediaResponse.model_validate(media) 
+            for media in result["successful"]
+        ]
+        
+        return EventMediaBatchUploadResponse(
+            successful=successful_responses,
+            failed=result["failed"],
+            total_requested=result["total_requested"],
+            total_successful=result["total_successful"],
+            total_failed=result["total_failed"],
+            batch_id=result.get("zone_id")
+        )
+            
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
 @router.get("/{event_id}/media", response_model=List[EventMediaResponse], tags=["Zone - Media"])
 async def get_event_media(
     event_id: UUID,
@@ -648,11 +853,12 @@ async def delete_media(
     media_service: EventMediaService = Depends(get_event_media_service)
 ):
     """
-    Delete a media item from an event.
+    Delete a single media file from an event.
     
     - Requires JWT authentication
     - User can only delete media from their own events
-    - Also removes the file from S3
+    - Removes the file from S3
+    - If this is the last file in a zone, the zone is also deleted automatically
     """
     try:
         # Extract user_id from JWT token
@@ -662,6 +868,38 @@ async def delete_media(
         deleted = await media_service.delete_media(user_id, event_id, media_id)
         if not deleted:
             raise NotFoundError("Media not found")
+            
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.delete("/{event_id}/media/zones/{zone_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Zone - Media"])
+async def delete_zone(
+    event_id: UUID,
+    zone_id: UUID,
+    current_user: CurrentActiveUser,
+    media_service: EventMediaService = Depends(get_event_media_service)
+):
+    """
+    Delete an entire zone with all its media files.
+    
+    - Requires JWT authentication
+    - User can only delete zones from their own events
+    - Removes all associated files from S3
+    - Deletes the zone metadata and all media records
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Delete zone with all media files
+        deleted = await media_service.delete_zone(user_id, event_id, zone_id)
+        if not deleted:
+            raise NotFoundError(f"Zone {zone_id} not found for event {event_id}")
             
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -82,16 +82,16 @@ class Plug(BaseModel):
         doc="Type of plug: target or contact"
     )
     
-    # Basic contact information (required for both targets and contacts)
-    first_name: Mapped[str] = mapped_column(
+    # Basic contact information (optional per client request)
+    first_name: Mapped[Optional[str]] = mapped_column(
         String(32),
-        nullable=False,
+        nullable=True,
         doc="Contact's first name"
     )
     
-    last_name: Mapped[str] = mapped_column(
+    last_name: Mapped[Optional[str]] = mapped_column(
         String(32),
-        nullable=False,
+        nullable=True,
         doc="Contact's last name"
     )
     

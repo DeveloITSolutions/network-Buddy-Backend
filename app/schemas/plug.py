@@ -12,10 +12,10 @@ from app.models.plug import PlugType, NetworkType, BusinessType, Priority
 
 
 class PlugBase(BaseModel):
-    """Base schema for plug operations."""
+    """Base schema for plug operations. All fields are optional."""
     
-    first_name: str = Field(..., min_length=1, max_length=32, description="Contact's first name")
-    last_name: str = Field(..., min_length=1, max_length=32, description="Contact's last name")
+    first_name: Optional[str] = Field(None, max_length=32, description="Contact's first name")
+    last_name: Optional[str] = Field(None, max_length=32, description="Contact's last name")
     job_title: Optional[str] = Field(None, max_length=64, description="Contact's job title")
     profile_picture: Optional[HttpUrl] = Field(None, description="Profile picture URL")
     company: Optional[str] = Field(None, max_length=64, description="Company name")
@@ -23,16 +23,6 @@ class PlugBase(BaseModel):
     primary_number: Optional[str] = Field(None, max_length=18, description="Primary phone number")
     secondary_number: Optional[str] = Field(None, max_length=18, description="Secondary phone number")
     linkedin_url: Optional[HttpUrl] = Field(None, description="LinkedIn profile URL")
-    
-    @validator('primary_number', 'secondary_number')
-    def validate_phone_number(cls, v):
-        """Validate phone number format."""
-        if v is not None:
-            # Remove all non-digit characters for validation
-            digits_only = ''.join(filter(str.isdigit, v))
-            if len(digits_only) < 10:
-                raise ValueError('Phone number must contain at least 10 digits')
-        return v
 
 
 class TargetCreate(PlugBase):
@@ -43,10 +33,10 @@ class TargetCreate(PlugBase):
 
 
 class TargetUpdate(BaseModel):
-    """Schema for updating a target."""
+    """Schema for updating a target. All fields are optional."""
     
-    first_name: Optional[str] = Field(None, min_length=1, max_length=32)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=32)
+    first_name: Optional[str] = Field(None, max_length=32)
+    last_name: Optional[str] = Field(None, max_length=32)
     job_title: Optional[str] = Field(None, max_length=64)
     profile_picture: Optional[HttpUrl] = Field(None)
     company: Optional[str] = Field(None, max_length=64)
@@ -54,27 +44,18 @@ class TargetUpdate(BaseModel):
     primary_number: Optional[str] = Field(None, max_length=18)
     secondary_number: Optional[str] = Field(None, max_length=18)
     linkedin_url: Optional[HttpUrl] = Field(None)
-    
-    @validator('primary_number', 'secondary_number')
-    def validate_phone_number(cls, v):
-        """Validate phone number format."""
-        if v is not None:
-            digits_only = ''.join(filter(str.isdigit, v))
-            if len(digits_only) < 10:
-                raise ValueError('Phone number must contain at least 10 digits')
-        return v
 
 
 class ContactCreate(PlugBase):
-    """Schema for creating a contact (complete plug)."""
+    """Schema for creating a contact (complete plug). All fields are optional."""
     
     # Contact-specific fields
     notes: Optional[str] = Field(None, description="Notes about the contact")
-    network_type: Optional[str] = Field(NetworkType.NEW_CLIENT, description="Type of network relationship (can be enum value or custom string)")
+    network_type: Optional[str] = Field(None, description="Type of network relationship (can be enum value or custom string)")
     business_type: Optional[str] = Field(None, description="Type of business (can be enum value or custom string)")
     connect_reason: Optional[str] = Field(None, description="Reason for connecting")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tags associated with the contact")
-    priority: Optional[Priority] = Field(Priority.MEDIUM, description="Priority level for the contact")
+    tags: Optional[List[str]] = Field(None, description="Tags associated with the contact")
+    priority: Optional[Priority] = Field(None, description="Priority level for the contact")
     
     # Flexible custom_data for additional fields
     custom_data: Optional[Dict[str, Any]] = Field(None, description="Additional custom_data including custom fields")
@@ -82,16 +63,9 @@ class ContactCreate(PlugBase):
     # HubSpot integration
     hubspot_pipeline_stage: Optional[str] = Field(None, max_length=64, description="HubSpot pipeline stage")
     
-    @validator('tags')
-    def validate_tags(cls, v):
-        """Validate tags list."""
-        if v is not None and len(v) > 10:
-            raise ValueError('Maximum 10 tags allowed')
-        return v
-    
     @validator('custom_data')
     def validate_custom_data(cls, v):
-        """Validate custom data structure."""
+        """Validate custom data structure (only if provided)."""
         if v is not None:
             # Ensure custom_data is a dictionary
             if not isinstance(v, dict):
@@ -103,10 +77,10 @@ class ContactCreate(PlugBase):
 
 
 class ContactUpdate(BaseModel):
-    """Schema for updating a contact."""
+    """Schema for updating a contact. All fields are optional."""
     
-    first_name: Optional[str] = Field(None, min_length=1, max_length=32)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=32)
+    first_name: Optional[str] = Field(None, max_length=32)
+    last_name: Optional[str] = Field(None, max_length=32)
     job_title: Optional[str] = Field(None, max_length=64)
     profile_picture: Optional[HttpUrl] = Field(None)
     company: Optional[str] = Field(None, max_length=64)
@@ -127,25 +101,9 @@ class ContactUpdate(BaseModel):
     # HubSpot integration
     hubspot_pipeline_stage: Optional[str] = Field(None, max_length=64, description="HubSpot pipeline stage")
     
-    @validator('primary_number', 'secondary_number')
-    def validate_phone_number(cls, v):
-        """Validate phone number format."""
-        if v is not None:
-            digits_only = ''.join(filter(str.isdigit, v))
-            if len(digits_only) < 10:
-                raise ValueError('Phone number must contain at least 10 digits')
-        return v
-    
-    @validator('tags')
-    def validate_tags(cls, v):
-        """Validate tags list."""
-        if v is not None and len(v) > 10:
-            raise ValueError('Maximum 10 tags allowed')
-        return v
-    
     @validator('custom_data')
     def validate_custom_data(cls, v):
-        """Validate custom_data structure."""
+        """Validate custom_data structure (only if provided)."""
         if v is not None:
             if not isinstance(v, dict):
                 raise ValueError('Metadata must be a dictionary')
@@ -155,14 +113,14 @@ class ContactUpdate(BaseModel):
 
 
 class TargetToContactConversion(BaseModel):
-    """Schema for converting a target to contact."""
+    """Schema for converting a target to contact. All fields are optional."""
     
     notes: Optional[str] = Field(None, description="Notes about the contact")
-    network_type: str = Field(NetworkType.NEW_CLIENT, description="Type of network relationship (can be enum value or custom string)")
+    network_type: Optional[str] = Field(None, description="Type of network relationship (can be enum value or custom string)")
     business_type: Optional[str] = Field(None, description="Type of business (can be enum value or custom string)")
     connect_reason: Optional[str] = Field(None, description="Reason for connecting")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tags associated with the contact")
-    priority: Priority = Field(Priority.MEDIUM, description="Priority level for the contact")
+    tags: Optional[List[str]] = Field(None, description="Tags associated with the contact")
+    priority: Optional[Priority] = Field(None, description="Priority level for the contact")
     
     # Flexible custom_data for additional fields
     custom_data: Optional[Dict[str, Any]] = Field(None, description="Additional custom_data including custom fields")
@@ -170,16 +128,9 @@ class TargetToContactConversion(BaseModel):
     # HubSpot integration
     hubspot_pipeline_stage: Optional[str] = Field(None, max_length=64, description="HubSpot pipeline stage")
     
-    @validator('tags')
-    def validate_tags(cls, v):
-        """Validate tags list."""
-        if v is not None and len(v) > 10:
-            raise ValueError('Maximum 10 tags allowed')
-        return v
-    
     @validator('custom_data')
     def validate_custom_data(cls, v):
-        """Validate custom_data structure."""
+        """Validate custom_data structure (only if provided)."""
         if v is not None:
             if not isinstance(v, dict):
                 raise ValueError('Metadata must be a dictionary')

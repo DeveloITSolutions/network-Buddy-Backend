@@ -29,9 +29,9 @@ class Event(BaseModel):
     __tablename__ = "events"
     
     # Basic event information
-    title: Mapped[str] = mapped_column(
+    title: Mapped[Optional[str]] = mapped_column(
         String(128),
-        nullable=False,
+        nullable=True,
         index=True
     )
     
@@ -46,15 +46,15 @@ class Event(BaseModel):
     )
     
     # Event timing
-    start_date: Mapped[datetime] = mapped_column(
+    start_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         index=True
     )
     
-    end_date: Mapped[datetime] = mapped_column(
+    end_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         index=True
     )
     

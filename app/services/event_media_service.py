@@ -2,6 +2,7 @@
 Event media service for media operations.
 """
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
@@ -305,7 +306,8 @@ class EventMediaService(EventBaseService):
         media_id: UUID
     ) -> bool:
         """
-        Delete a media item from an event.
+        Delete a single media item from an event.
+        If the media belongs to a zone and it's the last file, the zone is also deleted.
         
         Args:
             user_id: Owner user ID
@@ -320,6 +322,8 @@ class EventMediaService(EventBaseService):
         if not media or media.event_id != event_id:
             return False
         
+        zone_id = media.zone_id
+        
         # Delete from S3 if s3_key exists
         if media.s3_key:
             try:
@@ -330,7 +334,22 @@ class EventMediaService(EventBaseService):
                 # Continue with database deletion even if S3 deletion fails
         
         # Delete media record
-        return await self.media_repo.delete(media_id, soft=True)
+        deleted = await self.media_repo.delete(media_id, soft=True)
+        
+        # Check if zone should be deleted (if this was the last media file in the zone)
+        if deleted and zone_id:
+            remaining_media = await self.media_repo.get_media_by_zone_id(event_id, zone_id)
+            if not remaining_media:
+                # Delete the empty zone
+                zone = self.db.query(EventMediaZone).filter(
+                    EventMediaZone.id == zone_id
+                ).first()
+                if zone:
+                    zone.is_deleted = True
+                    self.db.commit()
+                    logger.info(f"Deleted empty zone {zone_id}")
+        
+        return deleted
 
     @handle_service_errors("download media file", "MEDIA_DOWNLOAD_FAILED")
     @require_event_ownership
@@ -732,6 +751,197 @@ class EventMediaService(EventBaseService):
             "file_count": len(media_list),
             "created_at": zone.created_at,
             "updated_at": zone.updated_at
+        }
+
+    @handle_service_errors("delete zone", "ZONE_DELETION_FAILED")
+    @require_event_ownership
+    async def delete_zone(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        zone_id: UUID
+    ) -> bool:
+        """
+        Delete an entire zone with all its media files.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            zone_id: Zone ID
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        # Verify zone belongs to event
+        zone = self.db.query(EventMediaZone).filter(
+            EventMediaZone.id == zone_id,
+            EventMediaZone.event_id == event_id,
+            EventMediaZone.is_deleted == False
+        ).first()
+        
+        if not zone:
+            return False
+        
+        # Get all media files in the zone
+        media_files = await self.media_repo.get_media_by_zone_id(event_id, zone_id)
+        
+        # Delete all media files from S3 and database
+        for media in media_files:
+            if media.s3_key:
+                try:
+                    s3_service().delete_file(media.s3_key)
+                    logger.info(f"Deleted S3 file: {media.s3_key}")
+                except Exception as e:
+                    logger.error(f"Failed to delete S3 file {media.s3_key}: {e}")
+            
+            # Soft delete media record
+            await self.media_repo.delete(media.id, soft=True)
+        
+        # Soft delete zone
+        zone.is_deleted = True
+        self.db.commit()
+        
+        logger.info(f"Deleted zone {zone_id} with {len(media_files)} media files")
+        return True
+
+    @handle_service_errors("update zone", "ZONE_UPDATE_FAILED")
+    @require_event_ownership
+    async def update_zone(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        zone_id: UUID,
+        update_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update zone metadata (title, description, tags).
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            zone_id: Zone ID
+            update_data: Dictionary with fields to update
+            
+        Returns:
+            Updated zone details or None if not found
+        """
+        # Verify zone belongs to event
+        zone = self.db.query(EventMediaZone).filter(
+            EventMediaZone.id == zone_id,
+            EventMediaZone.event_id == event_id,
+            EventMediaZone.is_deleted == False
+        ).first()
+        
+        if not zone:
+            return None
+        
+        # Update zone fields
+        if 'title' in update_data:
+            zone.title = update_data['title']
+        
+        if 'description' in update_data:
+            zone.description = update_data['description']
+        
+        if 'tags' in update_data:
+            tags = update_data['tags']
+            if isinstance(tags, list):
+                zone.tags = ', '.join(str(tag) for tag in tags) if tags else None
+            elif isinstance(tags, str):
+                zone.tags = tags
+        
+        # Update timestamp
+        zone.updated_at = datetime.utcnow()
+        
+        # Commit changes
+        self.db.commit()
+        self.db.refresh(zone)
+        
+        # Get file count
+        media_files = await self.media_repo.get_media_by_zone_id(event_id, zone_id)
+        
+        logger.info(f"Updated zone {zone_id} metadata")
+        
+        return {
+            "zone_id": zone.id,
+            "title": zone.title,
+            "description": zone.description,
+            "tags": zone.get_tags_list(),
+            "file_count": len(media_files),
+            "updated_at": zone.updated_at
+        }
+
+    @handle_service_errors("add media to zone", "ADD_MEDIA_TO_ZONE_FAILED")
+    @require_event_ownership
+    async def add_media_to_zone(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        zone_id: UUID,
+        files_data: List[Tuple[Union[Any, bytes], str]]
+    ) -> Dict[str, Any]:
+        """
+        Add new media files to an existing zone.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            zone_id: Zone ID
+            files_data: List of tuples (file_obj, filename)
+            
+        Returns:
+            Dictionary with successful uploads, failed uploads, and counts
+        """
+        # Verify zone exists and belongs to event
+        zone = self.db.query(EventMediaZone).filter(
+            EventMediaZone.id == zone_id,
+            EventMediaZone.event_id == event_id,
+            EventMediaZone.is_deleted == False
+        ).first()
+        
+        if not zone:
+            raise NotFoundError(
+                f"Zone {zone_id} not found for event {event_id}",
+                error_code="ZONE_NOT_FOUND"
+            )
+        
+        successful = []
+        failed = []
+        
+        # Upload files to the existing zone
+        for idx, (file_obj, filename) in enumerate(files_data):
+            try:
+                media = await self._upload_file_to_zone(
+                    user_id=user_id,
+                    event_id=event_id,
+                    file_obj=file_obj,
+                    filename=filename,
+                    zone_id=zone_id
+                )
+                successful.append(media)
+                logger.info(f"Added file {idx + 1}/{len(files_data)} to zone {zone_id}: {filename}")
+                
+            except Exception as e:
+                error_detail = {
+                    "filename": filename,
+                    "index": idx,
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
+                failed.append(error_detail)
+                logger.error(f"Failed to add file {idx + 1}/{len(files_data)} to zone {zone_id}: {filename}. Error: {e}")
+        
+        # Update zone timestamp if any files were added
+        if successful:
+            zone.updated_at = datetime.utcnow()
+            self.db.commit()
+        
+        return {
+            "successful": successful,
+            "failed": failed,
+            "total_requested": len(files_data),
+            "total_successful": len(successful),
+            "total_failed": len(failed),
+            "zone_id": zone_id
         }
 
     def _convert_tags_to_string(self, data: Dict[str, Any]) -> Dict[str, Any]:

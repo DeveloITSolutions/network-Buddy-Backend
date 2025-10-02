@@ -45,18 +45,7 @@ class EventRepository(BaseRepository[Event]):
             # Ensure user association
             event_data.update({"user_id": user_id})
             
-            # Validate required fields
-            if not event_data.get("title"):
-                raise ValidationError(
-                    "Event title is required",
-                    error_code="MISSING_REQUIRED_FIELDS"
-                )
-            
-            if not event_data.get("start_date") or not event_data.get("end_date"):
-                raise ValidationError(
-                    "Start date and end date are required",
-                    error_code="MISSING_REQUIRED_FIELDS"
-                )
+            # No required field validations - all fields are optional per client request
             
             return await self.create(event_data)
             
