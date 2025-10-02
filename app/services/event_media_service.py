@@ -141,24 +141,43 @@ class EventMediaService(EventBaseService):
                     error_code="FILE_URL_TOO_LONG"
                 )
             
-            # Create media record
+            # Create zone for metadata if title/description/tags provided
+            zone_id = None
+            if upload_data.title or upload_data.description or upload_data.tags:
+                from uuid import uuid4
+                zone = EventMediaZone(
+                    id=uuid4(),
+                    event_id=event_id,
+                    title=upload_data.title[:256] if upload_data.title and len(upload_data.title) > 256 else upload_data.title,
+                    description=upload_data.description,
+                    tags=self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
+                )
+                self.db.add(zone)
+                self.db.flush()
+                zone_id = zone.id
+            
+            # Create media record with only file-specific data
             media_dict = {
                 "event_id": event_id,
-                "title": upload_data.title[:256] if upload_data.title and len(upload_data.title) > 256 else upload_data.title,
-                "description": upload_data.description,
+                "zone_id": zone_id,
+                "batch_id": zone_id,  # For backward compatibility
                 "file_url": file_url,
                 "s3_key": s3_key,
                 "file_type": file_type,
-                "file_size": file_size,
-                "tags": self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
+                "file_size": file_size
             }
             
             logger.info(f"Creating media record with data: {media_dict}")
             try:
                 media = await self.media_repo.create(media_dict)
+                # Commit the zone if created
+                if zone_id:
+                    self.db.commit()
             except Exception as db_error:
                 logger.error(f"Database creation failed: {db_error}")
                 logger.error(f"Media dict that failed: {media_dict}")
+                if zone_id:
+                    self.db.rollback()
                 raise
             
             logger.info(f"Uploaded media file {filename} to S3 for event {event_id}, media ID: {media.id}")
