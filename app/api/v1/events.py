@@ -179,10 +179,8 @@ async def update_event(
             event_id=event_id
         )
         
-        # Update event through repository
-        from app.repositories.event_repository import EventRepository
-        event_repo = EventRepository(service.db)
-        event = await event_repo.update_event(user_id, event_id, update_dict)
+        # Update event through service
+        event = await service.update_event(user_id, event_id, EventUpdate(**update_dict))
         
         if not event:
             raise NotFoundError("Event not found")
