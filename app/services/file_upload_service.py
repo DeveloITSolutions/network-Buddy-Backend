@@ -49,9 +49,9 @@ class FileUploadService:
     
     # Maximum file sizes (in bytes)
     MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
-    MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+    MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500MB - supports large videos
     MAX_DOCUMENT_SIZE = 50 * 1024 * 1024  # 50MB
-    MAX_AUDIO_SIZE = 20 * 1024 * 1024  # 20MB
+    MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50MB - supports high quality audio
     
     def __init__(self, db: Session, upload_dir: str = "uploads"):
         """Initialize file upload service."""

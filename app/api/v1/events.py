@@ -594,8 +594,9 @@ async def upload_media_to_s3(
             tags=tag_list if tag_list else None
         )
         
-        # File size limit
-        max_file_size = 100 * 1024 * 1024  # 100MB per file
+        # File size limit from settings (supports large videos up to 500MB)
+        from app.config.settings import settings
+        max_file_size = settings.max_file_size
         
         # Single file upload
         if len(files) == 1:
@@ -787,8 +788,9 @@ async def add_media_to_zone(
         # Extract user_id from JWT token
         user_id = UUID(current_user["user_id"])
         
-        # File size limit
-        max_file_size = 100 * 1024 * 1024  # 100MB per file
+        # File size limit from settings (supports large videos up to 500MB)
+        from app.config.settings import settings
+        max_file_size = settings.max_file_size
         
         # Prepare files data
         files_data = []
