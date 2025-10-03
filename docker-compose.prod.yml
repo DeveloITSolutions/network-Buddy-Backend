@@ -93,8 +93,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: json
       
-      # File uploads
-      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      # File uploads (500MB default - supports large videos)
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-524288000}
       UPLOAD_PATH: /app/uploads
       
       # Email
