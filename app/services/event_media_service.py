@@ -477,7 +477,7 @@ class EventMediaService(EventBaseService):
         Upload multiple files to S3 and create media records with zone metadata stored once.
         
         Business Logic:
-        - Creates ONE zone record with title, description, tags
+        - Creates ONE zone record with title, description, tags (only if metadata provided)
         - Creates multiple media records with ONLY file data (no metadata duplication)
         - All media files reference the same zone for metadata
         
@@ -492,18 +492,20 @@ class EventMediaService(EventBaseService):
         """
         from uuid import uuid4
         
-        # Step 1: Create zone record with metadata (stored ONCE)
-        zone = EventMediaZone(
-            id=uuid4(),
-            event_id=event_id,
-            title=upload_metadata.title,
-            description=upload_metadata.description,
-            tags=self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
-        )
-        self.db.add(zone)
-        self.db.flush()  # Get the zone ID without committing
+        # Step 1: Create zone record ONLY if there's metadata
+        zone_id = None
+        if upload_metadata.title or upload_metadata.description or upload_metadata.tags:
+            zone = EventMediaZone(
+                id=uuid4(),
+                event_id=event_id,
+                title=upload_metadata.title,
+                description=upload_metadata.description,
+                tags=self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
+            )
+            self.db.add(zone)
+            self.db.flush()  # Get the zone ID without committing
+            zone_id = zone.id
         
-        zone_id = zone.id
         successful = []
         failed = []
         
@@ -533,10 +535,13 @@ class EventMediaService(EventBaseService):
         # Step 3: Commit if we have successful uploads, rollback if all failed
         if successful:
             self.db.commit()
-            logger.info(f"Zone {zone_id} created with {len(successful)} media files")
+            if zone_id:
+                logger.info(f"Zone {zone_id} created with {len(successful)} media files")
+            else:
+                logger.info(f"Uploaded {len(successful)} media files without zone (no metadata provided)")
         else:
             self.db.rollback()
-            logger.warning(f"All uploads failed, zone not created")
+            logger.warning(f"All uploads failed")
             zone_id = None
         
         return {
