@@ -40,7 +40,7 @@ async def upload_multiple_plug_media_to_s3(
     - Files are stored in S3 with organized paths
     - Supports multiple images (snaps) and audio files (voice recordings) in one request
     - Maximum 20 files per request
-    - Each file max size: 100MB
+    - Each file max size: 500MB (supports large videos)
     """
     try:
         # Extract user_id from JWT token

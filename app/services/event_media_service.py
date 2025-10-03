@@ -141,20 +141,19 @@ class EventMediaService(EventBaseService):
                     error_code="FILE_URL_TOO_LONG"
                 )
             
-            # Create zone for metadata if title/description/tags provided
-            zone_id = None
-            if upload_data.title or upload_data.description or upload_data.tags:
-                from uuid import uuid4
-                zone = EventMediaZone(
-                    id=uuid4(),
-                    event_id=event_id,
-                    title=upload_data.title[:256] if upload_data.title and len(upload_data.title) > 256 else upload_data.title,
-                    description=upload_data.description,
-                    tags=self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
-                )
-                self.db.add(zone)
-                self.db.flush()
-                zone_id = zone.id
+            # Always create a zone for every upload (even without metadata)
+            # This ensures the zone can be retrieved and metadata can be added later
+            from uuid import uuid4
+            zone = EventMediaZone(
+                id=uuid4(),
+                event_id=event_id,
+                title=upload_data.title[:256] if upload_data.title and len(upload_data.title) > 256 else upload_data.title,
+                description=upload_data.description,
+                tags=self._convert_tags_to_string({"tags": upload_data.tags or []})["tags"]
+            )
+            self.db.add(zone)
+            self.db.flush()
+            zone_id = zone.id
             
             # Create media record with only file-specific data
             media_dict = {
@@ -170,14 +169,12 @@ class EventMediaService(EventBaseService):
             logger.info(f"Creating media record with data: {media_dict}")
             try:
                 media = await self.media_repo.create(media_dict)
-                # Commit the zone if created
-                if zone_id:
-                    self.db.commit()
+                # Commit the zone (always created now)
+                self.db.commit()
             except Exception as db_error:
                 logger.error(f"Database creation failed: {db_error}")
                 logger.error(f"Media dict that failed: {media_dict}")
-                if zone_id:
-                    self.db.rollback()
+                self.db.rollback()
                 raise
             
             logger.info(f"Uploaded media file {filename} to S3 for event {event_id}, media ID: {media.id}")
@@ -492,19 +489,18 @@ class EventMediaService(EventBaseService):
         """
         from uuid import uuid4
         
-        # Step 1: Create zone record ONLY if there's metadata
-        zone_id = None
-        if upload_metadata.title or upload_metadata.description or upload_metadata.tags:
-            zone = EventMediaZone(
-                id=uuid4(),
-                event_id=event_id,
-                title=upload_metadata.title,
-                description=upload_metadata.description,
-                tags=self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
-            )
-            self.db.add(zone)
-            self.db.flush()  # Get the zone ID without committing
-            zone_id = zone.id
+        # Step 1: Always create a zone for every batch upload (even without metadata)
+        # This ensures the zone can be retrieved and metadata can be added later
+        zone = EventMediaZone(
+            id=uuid4(),
+            event_id=event_id,
+            title=upload_metadata.title,
+            description=upload_metadata.description,
+            tags=self._convert_tags_to_string({"tags": upload_metadata.tags or []})["tags"]
+        )
+        self.db.add(zone)
+        self.db.flush()  # Get the zone ID without committing
+        zone_id = zone.id
         
         successful = []
         failed = []
