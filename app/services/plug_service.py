@@ -435,11 +435,7 @@ class PlugService(BaseService[Plug]):
                 error_code="INVALID_CONVERSION_SOURCE"
             )
         
-        if not target.is_complete_for_contact():
-            raise ValidationError(
-                "Target needs at least name and contact info for conversion",
-                error_code="INCOMPLETE_TARGET_DATA"
-            )
+        # No minimum data requirements for conversion - any target can be converted to contact
 
     async def _validate_network_type(self, network_type: str) -> None:
         """Validate network type value."""

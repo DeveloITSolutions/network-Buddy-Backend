@@ -18,6 +18,7 @@ from app.schemas.event import (
 )
 from app.services.event_service import EventService
 from app.services.event_media_service import EventMediaService
+from app.services.event_expense_service import EventExpenseService
 from app.services.file_upload_service import FileUploadService
 from app.utils.form_parsers import parse_event_form_data
 
@@ -40,6 +41,11 @@ def get_file_upload_service(db: DatabaseSession) -> FileUploadService:
 def get_event_media_service(db: DatabaseSession) -> EventMediaService:
     """Dependency to get event media service instance."""
     return EventMediaService(db)
+
+
+def get_event_expense_service(db: DatabaseSession) -> EventExpenseService:
+    """Dependency to get event expense service instance."""
+    return EventExpenseService(db)
 
 
 # ============================================================================
@@ -542,6 +548,80 @@ async def get_event_expenses(
         expenses, total = await service.get_event_expenses(user_id, event_id, category, skip, limit)
         
         return [EventExpenseResponse.model_validate(expense) for expense in expenses]
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/{event_id}/expenses/{expense_id}", response_model=EventExpenseResponse, tags=["Deeds - Expenses"])
+async def update_expense(
+    event_id: UUID,
+    expense_id: UUID,
+    expense_data: EventExpenseUpdate,
+    current_user: CurrentActiveUser,
+    expense_service: EventExpenseService = Depends(get_event_expense_service)
+):
+    """
+    Update an expense for an event.
+    
+    - User can only update expenses in their own events
+    - All fields in EventExpenseUpdate are optional
+    - Returns updated expense details
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Update expense through service
+        expense = await expense_service.update_expense(user_id, event_id, expense_id, expense_data)
+        
+        if not expense:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Expense not found"
+            )
+        
+        return EventExpenseResponse.model_validate(expense)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{event_id}/expenses/{expense_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Deeds - Expenses"])
+async def delete_expense(
+    event_id: UUID,
+    expense_id: UUID,
+    current_user: CurrentActiveUser,
+    expense_service: EventExpenseService = Depends(get_event_expense_service)
+):
+    """
+    Delete an expense from an event.
+    
+    - User can only delete expenses from their own events
+    - Performs soft delete (marks as deleted)
+    - Returns 204 No Content on success
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Delete expense through service
+        deleted = await expense_service.delete_expense(user_id, event_id, expense_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Expense not found"
+            )
+        
+        # Return 204 No Content
+        return None
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BusinessLogicError as e:

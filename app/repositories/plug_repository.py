@@ -98,12 +98,7 @@ class PlugRepository(BaseRepository[Plug]):
                     error_code="INVALID_CONVERSION_SOURCE"
                 )
             
-            # Check if target has minimum info for conversion
-            if not target.is_complete_for_contact():
-                raise ValidationError(
-                    "Target needs at least name and contact info (email or phone) for conversion",
-                    error_code="INCOMPLETE_TARGET_DATA"
-                )
+            # No minimum data requirements for conversion - any target can be converted to contact
             
             # Prepare update data for conversion
             update_data = {

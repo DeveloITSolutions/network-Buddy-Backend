@@ -10,6 +10,7 @@ from . import (
     plugs,
     events,
     event_plug_media,
+    user_detail,
     # organizations,  # Removed - not needed for basic auth flow
     # networking,
     # expenses,
@@ -30,6 +31,7 @@ router.include_router(users.router, prefix="/users", tags=["Users"])
 router.include_router(plugs.router, prefix="/plugs", tags=["Plugs"])
 router.include_router(events.router, prefix="/events")  # Tags defined per endpoint for better organization
 router.include_router(event_plug_media.router, prefix="/events", tags=["Event Plug Media"])
+router.include_router(user_detail.router, prefix="/users", tags=["User Dashboard"])
 # router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])  # Removed
 
 # Uncomment these as you implement the corresponding modules
