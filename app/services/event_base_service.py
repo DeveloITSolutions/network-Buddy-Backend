@@ -139,18 +139,40 @@ class EventBaseService:
         """
         Build filter dictionary from EventFilters schema.
         
+        The base repository's _apply_filters method expects simple field names,
+        not field__operator format. We need to build complex filter structures
+        that the repository can understand.
+        
         Args:
             filters: EventFilters schema object
             
         Returns:
-            Dictionary with filter conditions
+            Dictionary with filter conditions compatible with base repository
         """
         filter_dict = {}
         
+        # Date range filters - build complex filter dicts for repository
         if hasattr(filters, 'start_date_from') and filters.start_date_from:
-            filter_dict["start_date__gte"] = filters.start_date_from
+            if 'start_date' not in filter_dict:
+                filter_dict['start_date'] = {}
+            filter_dict['start_date']['gte'] = filters.start_date_from
+            
         if hasattr(filters, 'start_date_to') and filters.start_date_to:
-            filter_dict["start_date__lte"] = filters.start_date_to
+            if 'start_date' not in filter_dict:
+                filter_dict['start_date'] = {}
+            filter_dict['start_date']['lte'] = filters.start_date_to
+            
+        if hasattr(filters, 'end_date_from') and filters.end_date_from:
+            if 'end_date' not in filter_dict:
+                filter_dict['end_date'] = {}
+            filter_dict['end_date']['gte'] = filters.end_date_from
+            
+        if hasattr(filters, 'end_date_to') and filters.end_date_to:
+            if 'end_date' not in filter_dict:
+                filter_dict['end_date'] = {}
+            filter_dict['end_date']['lte'] = filters.end_date_to
+        
+        # Simple equality filters
         if hasattr(filters, 'is_active') and filters.is_active is not None:
             filter_dict["is_active"] = filters.is_active
         if hasattr(filters, 'is_public') and filters.is_public is not None:

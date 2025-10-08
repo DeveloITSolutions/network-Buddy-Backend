@@ -275,6 +275,11 @@ async def list_events(
     - Requires JWT authentication
     - Returns only the user's own events
     - Supports time-based filtering: 'today', 'upcoming', 'past'
+    
+    Time Filter Logic:
+    - 'today': Events happening right now (start_date <= today <= end_date)
+    - 'upcoming': Events that haven't started yet (start_date > today)
+    - 'past': Events that have already ended (end_date < today)
     """
     try:
         # Extract user_id from JWT token
@@ -282,28 +287,51 @@ async def list_events(
         
         # Apply time-based filtering if time_filter is provided
         from datetime import datetime, timezone
+        parsed_start_date_from = None
+        parsed_start_date_to = None
+        parsed_end_date_from = None
+        parsed_end_date_to = None
+        
         if time_filter:
             now = datetime.now(timezone.utc)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
             
             if time_filter.lower() == "today":
-                # Events happening today (start_date or end_date falls on today)
-                start_date_from = today_start.isoformat()
-                start_date_to = today_end.isoformat()
+                # Events happening today: start_date <= today AND end_date >= today
+                # This means: start_date <= today_end AND end_date >= today_start
+                parsed_start_date_to = today_end
+                parsed_end_date_from = today_start
             elif time_filter.lower() == "upcoming":
-                # Events starting after today
-                start_date_from = today_end.isoformat()
-                start_date_to = None
+                # Events that haven't started yet: start_date > today
+                parsed_start_date_from = today_end
             elif time_filter.lower() == "past":
-                # Events that ended before today
-                start_date_from = None
-                start_date_to = today_start.isoformat()
+                # Events that have already ended: end_date < today
+                parsed_end_date_to = today_start
             else:
                 raise ValidationError(
                     f"Invalid time_filter value: {time_filter}. Must be 'today', 'upcoming', or 'past'",
                     error_code="INVALID_TIME_FILTER"
                 )
+        else:
+            # Parse manual date filters if provided
+            if start_date_from:
+                try:
+                    parsed_start_date_from = datetime.fromisoformat(start_date_from.replace('Z', '+00:00'))
+                except ValueError as e:
+                    raise ValidationError(
+                        f"Invalid start_date_from format: {start_date_from}. Use ISO format (YYYY-MM-DDTHH:MM:SS)",
+                        error_code="INVALID_DATE_FORMAT"
+                    )
+            
+            if start_date_to:
+                try:
+                    parsed_start_date_to = datetime.fromisoformat(start_date_to.replace('Z', '+00:00'))
+                except ValueError as e:
+                    raise ValidationError(
+                        f"Invalid start_date_to format: {start_date_to}. Use ISO format (YYYY-MM-DDTHH:MM:SS)",
+                        error_code="INVALID_DATE_FORMAT"
+                    )
         
         if search:
             # Use search functionality
@@ -311,8 +339,10 @@ async def list_events(
         else:
             # Use regular list with filters
             filters = EventFilters(
-                start_date_from=start_date_from,
-                start_date_to=start_date_to,
+                start_date_from=parsed_start_date_from,
+                start_date_to=parsed_start_date_to,
+                end_date_from=parsed_end_date_from,
+                end_date_to=parsed_end_date_to,
                 is_active=is_active,
                 is_public=is_public,
                 city=city,

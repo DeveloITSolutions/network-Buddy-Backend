@@ -427,8 +427,10 @@ class EventFilters(BaseModel):
     """Schema for event filtering."""
     
     search: Optional[str] = Field(None, description="Search term")
-    start_date_from: Optional[datetime] = Field(None, description="Filter events from this date")
-    start_date_to: Optional[datetime] = Field(None, description="Filter events to this date")
+    start_date_from: Optional[datetime] = Field(None, description="Filter events starting from this date (inclusive)")
+    start_date_to: Optional[datetime] = Field(None, description="Filter events starting until this date (inclusive)")
+    end_date_from: Optional[datetime] = Field(None, description="Filter events ending from this date (inclusive)")
+    end_date_to: Optional[datetime] = Field(None, description="Filter events ending until this date (inclusive)")
     is_active: Optional[bool] = Field(None, description="Filter by active status")
     is_public: Optional[bool] = Field(None, description="Filter by public status")
     city: Optional[str] = Field(None, description="Filter by city")
