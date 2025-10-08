@@ -137,20 +137,41 @@ def require_plug_ownership(func: Callable[..., T]) -> Callable[..., T]:
 def validate_search_term(func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator to validate search terms before executing search functions.
-    Expects search_term as a parameter.
+    Expects search_term as a parameter (positional or keyword).
+    
+    Common function signatures:
+    - func(self, user_id, search_term, ...)
+    - func(self, user_id, search_term, skip, limit)
     """
     @wraps(func)
     async def wrapper(*args, **kwargs) -> T:
+        # Try to get search_term from kwargs first
         search_term = kwargs.get('search_term')
         
-        if not search_term or len(search_term.strip()) < 2:
+        # If not in kwargs, check positional args
+        # Typical signature: func(self, user_id, search_term, ...)
+        if search_term is None and len(args) >= 3:
+            search_term = args[2]  # args[0] = self, args[1] = user_id, args[2] = search_term
+        
+        if not search_term or not isinstance(search_term, str) or len(search_term.strip()) < 2:
             raise ValidationError(
                 "Search term must be at least 2 characters",
                 error_code="INVALID_SEARCH_TERM"
             )
         
         # Clean the search term
-        kwargs['search_term'] = search_term.strip()
+        cleaned_term = search_term.strip()
+        
+        # Update kwargs if it was passed as keyword argument
+        if 'search_term' in kwargs:
+            kwargs['search_term'] = cleaned_term
+        else:
+            # If passed as positional, update args tuple
+            # Convert args to list, update, and convert back
+            args_list = list(args)
+            if len(args) >= 3:
+                args_list[2] = cleaned_term
+                args = tuple(args_list)
         
         return await func(*args, **kwargs)
     return wrapper
