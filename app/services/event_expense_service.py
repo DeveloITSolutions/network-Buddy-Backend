@@ -101,6 +101,32 @@ class EventExpenseService(EventBaseService):
         """
         return await self.expense_repo.get_expense_categories(event_id)
 
+    @handle_service_errors("get expense", "EXPENSE_RETRIEVAL_FAILED")
+    @require_event_ownership
+    async def get_expense(
+        self,
+        user_id: UUID,
+        event_id: UUID,
+        expense_id: UUID
+    ) -> Optional[EventExpense]:
+        """
+        Get a specific expense for an event.
+        
+        Args:
+            user_id: Owner user ID
+            event_id: Event ID
+            expense_id: Expense ID
+            
+        Returns:
+            Expense if found and belongs to event, None otherwise
+        """
+        # Verify expense belongs to event
+        expense = await self.expense_repo.get(expense_id)
+        if not expense or expense.event_id != event_id:
+            return None
+        
+        return expense
+
     @handle_service_errors("update expense", "EXPENSE_UPDATE_FAILED")
     @require_event_ownership
     async def update_expense(
