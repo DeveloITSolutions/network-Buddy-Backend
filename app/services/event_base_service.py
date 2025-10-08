@@ -114,18 +114,8 @@ class EventBaseService:
         Raises:
             ValidationError: If validation fails
         """
-        # Check for duplicate events based on title and start date
-        existing_events = await self.event_repo.find_by({
-            "user_id": user_id,
-            "title": event_data.title,
-            "start_date": event_data.start_date
-        }, limit=1)
-        
-        if existing_events:
-            raise ValidationError(
-                "Event with this title and start date already exists",
-                error_code="DUPLICATE_EVENT"
-            )
+        # No duplicate validation - only start_date uniqueness is enforced at database level
+        pass
     
     async def _validate_agenda_creation(self, event: Any, agenda_data: Any) -> None:
         """

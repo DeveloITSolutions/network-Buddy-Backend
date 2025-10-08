@@ -166,3 +166,4 @@ class UserDetailRequest(BaseModel):
     recent_plugs_limit: int = Field(default=3, description="Limit for recent plugs")
     recent_media_limit: int = Field(default=2, description="Limit for recent media drops")
     active_users_limit: int = Field(default=3, description="Limit for active users")
+

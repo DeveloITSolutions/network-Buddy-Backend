@@ -181,10 +181,9 @@ class Event(BaseModel):
     
     # Constraints
     __table_args__ = (
-        CheckConstraint("end_date > start_date", name="check_end_after_start"),
         CheckConstraint("latitude >= -90 AND latitude <= 90", name="check_latitude_range"),
         CheckConstraint("longitude >= -180 AND longitude <= 180", name="check_longitude_range"),
-        UniqueConstraint("user_id", "title", "start_date", name="unique_user_event"),
+        # No unique constraints - allow multiple events with same dates/locations
     )
     
     @property

@@ -39,14 +39,7 @@ class EventBase(BaseModel):
     cover_image_url: Optional[HttpUrl] = Field(None, description="Cover image URL")
     is_public: bool = Field(False, description="Whether event is public")
     
-    @field_validator('end_date')
-    @classmethod
-    def validate_end_date(cls, v, info):
-        """Validate that end date is after start date (only if both provided)."""
-        if v is not None and hasattr(info, 'data') and 'start_date' in info.data and info.data['start_date'] is not None:
-            if v <= info.data['start_date']:
-                raise ValueError('End date must be after start date')
-        return v
+    # No date validation - allow flexible event scheduling
     
     @field_validator('latitude')
     @classmethod

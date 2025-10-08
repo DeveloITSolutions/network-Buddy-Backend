@@ -71,27 +71,27 @@ async def parse_event_form_data(
     """
     event_dict = {}
     
-    # Parse string fields
-    if title is not None:
-        event_dict["title"] = title
-    if theme is not None:
-        event_dict["theme"] = theme
-    if description is not None:
-        event_dict["description"] = description
-    if location_name is not None:
-        event_dict["location_name"] = location_name
-    if location_address is not None:
-        event_dict["location_address"] = location_address
-    if city is not None:
-        event_dict["city"] = city
-    if state is not None:
-        event_dict["state"] = state
-    if country is not None:
-        event_dict["country"] = country
-    if postal_code is not None:
-        event_dict["postal_code"] = postal_code
-    if website_url is not None:
-        event_dict["website_url"] = website_url
+    # Parse string fields - convert empty strings to None to avoid constraint issues
+    if title is not None and title.strip():
+        event_dict["title"] = title.strip()
+    if theme is not None and theme.strip():
+        event_dict["theme"] = theme.strip()
+    if description is not None and description.strip():
+        event_dict["description"] = description.strip()
+    if location_name is not None and location_name.strip():
+        event_dict["location_name"] = location_name.strip()
+    if location_address is not None and location_address.strip():
+        event_dict["location_address"] = location_address.strip()
+    if city is not None and city.strip():
+        event_dict["city"] = city.strip()
+    if state is not None and state.strip():
+        event_dict["state"] = state.strip()
+    if country is not None and country.strip():
+        event_dict["country"] = country.strip()
+    if postal_code is not None and postal_code.strip():
+        event_dict["postal_code"] = postal_code.strip()
+    if website_url is not None and website_url.strip():
+        event_dict["website_url"] = website_url.strip()
     
     # Parse numeric fields
     if latitude is not None:
@@ -103,17 +103,17 @@ async def parse_event_form_data(
     if is_public is not None:
         event_dict["is_public"] = is_public
     
-    # Parse date fields
-    if start_date is not None:
+    # Parse date fields - handle empty strings and null values
+    if start_date is not None and start_date.strip():
         try:
-            event_dict["start_date"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            event_dict["start_date"] = datetime.fromisoformat(start_date.strip().replace('Z', '+00:00'))
         except ValueError as e:
             logger.error(f"Failed to parse start_date: {e}")
             raise ValueError(f"Invalid start_date format: {start_date}")
     
-    if end_date is not None:
+    if end_date is not None and end_date.strip():
         try:
-            event_dict["end_date"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            event_dict["end_date"] = datetime.fromisoformat(end_date.strip().replace('Z', '+00:00'))
         except ValueError as e:
             logger.error(f"Failed to parse end_date: {e}")
             raise ValueError(f"Invalid end_date format: {end_date}")
@@ -173,11 +173,11 @@ def parse_datetime_string(date_string: Optional[str]) -> Optional[datetime]:
     Raises:
         ValueError: If parsing fails
     """
-    if date_string is None:
+    if date_string is None or not date_string.strip():
         return None
     
     try:
-        return datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+        return datetime.fromisoformat(date_string.strip().replace('Z', '+00:00'))
     except ValueError as e:
         logger.error(f"Failed to parse datetime: {e}")
         raise ValueError(f"Invalid datetime format: {date_string}")
