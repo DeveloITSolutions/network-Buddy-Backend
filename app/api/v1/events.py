@@ -586,6 +586,42 @@ async def get_event_expenses(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+@router.get("/{event_id}/expenses/{expense_id}", response_model=EventExpenseResponse, tags=["Deeds - Expenses"])
+async def get_expense(
+    event_id: UUID,
+    expense_id: UUID,
+    current_user: CurrentActiveUser,
+    expense_service: EventExpenseService = Depends(get_event_expense_service)
+):
+    """
+    Get a specific expense for an event.
+    
+    - Requires JWT authentication
+    - User can only access expenses from their own events
+    - Returns detailed expense information
+    """
+    try:
+        # Extract user_id from JWT token
+        user_id = UUID(current_user["user_id"])
+        
+        # Get expense through service
+        expense = await expense_service.get_expense(user_id, event_id, expense_id)
+        
+        if not expense:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Expense not found"
+            )
+        
+        return EventExpenseResponse.model_validate(expense)
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except BusinessLogicError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
 @router.put("/{event_id}/expenses/{expense_id}", response_model=EventExpenseResponse, tags=["Deeds - Expenses"])
 async def update_expense(
     event_id: UUID,
